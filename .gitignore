@@ -1,0 +1,22 @@
+# MATLAB
+*.asv
+*.m~
+*.mex*
+*.autosave
+slprj/
+sccprj/
+*.slxc
+
+# Training artifacts (regeneratable, large)
+logs_gbwm_offline/
+*.mat
+experiments/logs/*
+!experiments/logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
