@@ -7,13 +7,6 @@
 - **Duration:** 2026-05 → 2026-07
 - **Reference paper:** A. Unnikrishnan, *Financial News-Driven LLM Reinforcement Learning for Portfolio Management*
 
-## Weekly Plan
-
-- [x] **Week 1** — MATLAB R2025b setup, toolbox on-ramps (RL, Financial, Statistics & ML, Deep Learning, Optimization, Datafeed, Risk Management)
-- [ ] **Week 2** — Literature review (7 papers, see `papers/`); run + review the GBWM offline demo
-- [ ] **Week 3–7** — Data preprocessing, implement & compare RL agents (DQN baseline → CQL / IQL), feature engineering
-- [ ] **Week 8** — Wrap-up, final report
-
 ## Repo Layout
 
 ```
