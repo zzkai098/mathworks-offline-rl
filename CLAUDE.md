@@ -232,3 +232,144 @@ reproducibility)."
   rule. Custom training loop required (`trainFromData` does not support
   custom losses; will need a manual minibatch loop with `dlfeval` + custom
   gradient function).
+
+### Week 5 v1: Regime-Gated Asymmetric Reward (`src/week5_regime_reward.m`)
+
+**Motivation (mentor suggestion):** distinguish normal vs stressed market in
+the reward function so the agent learns regime-conditional risk aversion.
+Plan A from the literature analysis: amplify negative rewards on "stress" days.
+
+**Config delta vs v3:** only the reward in episode generation changes.
+```
+stress(t) := VIX_z(t) > 1.0  OR  T10Y2Y_z(t) < -1.0
+r(t)      := lambda * log(W'/W)   if stress(t) AND log(W'/W) < 0
+             log(W'/W)             otherwise
+r(T)      += 1.0  if W_T >= goal   (terminal bonus unchanged)
+```
+LAMBDA = 2.5 (Tversky-Kahneman loss aversion + Nature SR 2026 behavioral DRL).
+Everything else (6D state, 5 seeds, trainingRange=2515, network, agent options,
+eval windows) identical to v3 for clean A/B.
+
+**Train stress rate: 31.1%** (target was 15-25% — too broad, gate fires on a
+third of all training days, behaves more like global loss aversion than a
+sparse crisis signal).
+
+**Cross-seed results vs v3:**
+
+| Metric | v3 | v1 | Direction |
+|---|---|---|---|
+| Success rate | 11.6/30 | 11.6/30 | flat |
+| Mean Sharpe | 0.25 | **0.37** | ↑ |
+| Across-seed std | 0.27 | 0.36 | ↑ (worse) |
+| Mean MaxDD | 6.19% | 7.06% | ↑ (worse) |
+| **MaxDD P90** | **12.87%** | **14.40%** | ↑ (worse) ← core KPI failed |
+| **Worst Sharpe** | **-5.78** | **-5.57** | flat |
+| Mean Terminal | 99,625 | 100,556 | ↑ |
+
+**Action distribution went bimodal:** action #2 (low-vol defensive) jumped
+from ~1% to 23.1%, and action #15 (all-in NVDA) tripled from 5.3% to 17.3%.
+The middle-risk actions (#6, #9, #12) got hollowed out. Classic
+loss-amplification side effect: two winning strategies emerge, "avoid
+volatility entirely (#2)" and "swing for the goal bonus (#15)".
+
+**Stress vs Normal action histograms were nearly identical** (action #2:
+23.1% vs 23.3%, action #15: 17.3% vs 17.5%) — eval period 2022-2024 is mostly
+in stress regime, so the diagnostic is degenerate. Policy is NOT
+regime-conditional, just globally shifted.
+
+**Diagnosis:** mean Sharpe improvement is a happy accident, not the mentor's
+intended fix. Tail risk (MaxDD P90, worst Sharpe) — the metrics that
+motivated this change — went the wrong direction.
+
+### Week 5 v2: Tighter Stress Gate (`src/week5_regime_reward_v2.m`)
+
+**Config delta vs v1:**
+- `VIX_THR` 1.0 → 1.5
+- `SLOPE_THR` -1.0 → -1.5
+- LAMBDA unchanged at 2.5 (isolate threshold effect)
+
+**Train stress rate: 16.9%** (target hit ✓). Amplified-loss steps: 7.2% of
+all training steps (was 13.4% in v1).
+
+**Cross-seed results — three-version comparison:**
+
+| Metric | v3 | v1 | **v2** |
+|---|---|---|---|
+| Success rate | 11.6/30 | 11.6/30 | **13.0/30** ↑ |
+| Mean Sharpe | 0.25 | 0.37 | **0.50** ↑↑ |
+| Across-seed std | 0.27 | 0.36 | 0.38 |
+| Mean MaxDD | 6.19% | 7.06% | 7.70% |
+| **MaxDD P90** | **12.87%** | 14.40% | **15.41%** ← monotone worse |
+| **Worst Sharpe** | **-5.78** | -5.57 | **-5.80** ← unchanged in 2 iters |
+| Mean Terminal | 99,625 | 100,556 | **101,421** ↑ |
+| Terminal P10 | 91,141 | 91,267 | 90,724 |
+
+Per-seed Sharpe range: 0.01 (seed 1000) to 1.03 (seed 3000) — across-seed
+extreme spread is ~1.0, worse than v3's ~0.4.
+
+**Action distribution shifted to aggressive duo:** v1's bimodal #2+#15
+collapsed; v2 dominated by **#12 (24.3%, UNH+AAPL+NVDA balanced-aggressive)
++ #15 (21.0%, all-in NVDA)**, with #6 still at 14.4%. Stress-day and
+normal-day histograms remain nearly identical.
+
+**Trend across three versions is informative:**
+- Mean Sharpe: 0.25 → 0.37 → 0.50 (monotonically up)
+- MaxDD P90: 12.87% → 14.40% → 15.41% (monotonically up — wrong direction)
+- Worst Sharpe stuck around -5.7
+
+**Root-cause diagnosis — why lambda-loss saturated:**
+
+Episode generation uses **random** actions. When stress days amplify losses
+by λ, ALL actions on that day get penalized; the differentiation between
+defensive (#6, low magnitude loss) and aggressive (#15, high magnitude loss)
+shrinks relatively. DQN's Q signal learned to encode "stress days have lower
+value overall" rather than "in stress, action X dominates action Y". Hence
+no regime-conditional behavior, and worse tail because agent chases the
+terminal +1 bonus harder under amplified loss aversion.
+
+**Verdict:** the lambda-on-loss reward shaping approach is saturated.
+Continuing to tune threshold or λ will not address the mechanism. Reward
+signal needs to become **action-dependent within the stress regime** — which
+is exactly what a drawdown penalty provides (action mix determines drawdown
+magnitude even before regime is conditioned).
+
+### Locked next step — Week 5 Plan C: Drawdown Penalty (`src/week5_drawdown_penalty.m`)
+
+Replace lambda-loss shaping with explicit drawdown penalty:
+```
+peakW    = max(peakW, W')
+DD_t     = (peakW - W') / peakW
+r(t)     = log(W'/W) - beta * max(0, DD_t - DD_THR) + terminal_bonus
+```
+
+Initial config: BETA=5.0, DD_THR=0.03 (3% drawdown tolerance). Same 5-seed
+v3 protocol, no stress gate (drawdown is itself the regime signal).
+
+**Why this should work where v1/v2 didn't:**
+- DD is action-dependent: aggressive allocations naturally produce larger DD
+- Penalty directly targets the failing metric (MaxDD P90)
+- No threshold / regime-detection hyperparam
+- Literature anchor: MDPI JRFM 2025 risk-sensitive DRL paper, MPLS framework
+
+**Expected effect:** Mean Sharpe holds ~0.30-0.40 (slight haircut OK),
+worst Sharpe lifts from -5.78 toward -4, MaxDD P90 drops below 10%.
+If mean collapses below 0.10, BETA too high (sweep down to 2.0).
+
+### Reference Papers Consulted for Week 5 Reward Design
+
+1. Moody & Saffell (1998) *Reinforcement Learning for Trading*, NeurIPS —
+   foundational paper on differential Sharpe ratio as incremental
+   risk-adjusted reward for online trading.
+2. *Risk-Sensitive Deep Reinforcement Learning for Portfolio Optimization*
+   (MDPI JRFM 2025) — argues "risk-neutral RL is not enough"; encode CVaR /
+   drawdown / mean-variance directly into reward. MPLS framework shows
+   +40-70% Sharpe improvement over MVO/risk-parity with controlled drawdown
+   during COVID stress.
+3. *Adaptive and Regime-Aware RL for Portfolio Optimization* (arXiv
+   2509.14385, 2025) — closest to our setup. Latent macro signals + reward
+   clipping ±3% + transaction penalty + Sharpe reward. Explicit goal:
+   "reduce exposure during credit stress".
+4. *Behaviorally informed DRL with loss aversion* (Nature Sci Rep 2026) —
+   loss aversion lambda baked into reward; supports λ ∈ [2.0, 2.5].
+5. *Risk-Sensitive Reward-Free RL with CVaR* (Ni et al., ICML 2024) —
+   theoretical anchor for CVaR-based reward-free framework, PAC-efficient.
