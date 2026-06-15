@@ -333,27 +333,86 @@ signal needs to become **action-dependent within the stress regime** — which
 is exactly what a drawdown penalty provides (action mix determines drawdown
 magnitude even before regime is conditioned).
 
-### Locked next step — Week 5 Plan C: Drawdown Penalty (`src/week5_drawdown_penalty.m`)
+### Week 5 Plan C: Drawdown Penalty (`src/week5_drawdown_penalty.m`)
 
-Replace lambda-loss shaping with explicit drawdown penalty:
+Replaced lambda-loss shaping with explicit drawdown penalty:
 ```
-peakW    = max(peakW, W')
+peakW    = max(peakW, W')              (per-episode running peak)
 DD_t     = (peakW - W') / peakW
 r(t)     = log(W'/W) - beta * max(0, DD_t - DD_THR) + terminal_bonus
 ```
+Config: BETA=5.0, DD_THR=0.03. Same v3 5-seed protocol, no stress gate
+(drawdown is itself the regime signal).
 
-Initial config: BETA=5.0, DD_THR=0.03 (3% drawdown tolerance). Same 5-seed
-v3 protocol, no stress gate (drawdown is itself the regime signal).
+**Training diagnostic:** Penalty-active share averaged 18.1% of training
+steps across seeds, avg penalty magnitude ~0.12 — gate hit healthy band
+(target 15-35%) without any threshold tuning, because DD itself is the
+self-calibrating signal.
 
-**Why this should work where v1/v2 didn't:**
-- DD is action-dependent: aggressive allocations naturally produce larger DD
-- Penalty directly targets the failing metric (MaxDD P90)
-- No threshold / regime-detection hyperparam
-- Literature anchor: MDPI JRFM 2025 risk-sensitive DRL paper, MPLS framework
+**Cross-seed results — four-version comparison:**
 
-**Expected effect:** Mean Sharpe holds ~0.30-0.40 (slight haircut OK),
-worst Sharpe lifts from -5.78 toward -4, MaxDD P90 drops below 10%.
-If mean collapses below 0.10, BETA too high (sweep down to 2.0).
+| Metric | v3 | v1 | v2 | **Plan C** | Plan C vs v3 |
+|---|---|---|---|---|---|
+| Success rate | 11.6 | 11.6 | 13.0 | 10.6 | -1.0 |
+| Mean Sharpe | 0.25 | 0.37 | 0.50 | **0.36** | +0.11 |
+| Across-seed std | 0.27 | 0.36 | 0.38 | **0.25** | -0.02 (best) |
+| Within-seed Sharpe std | 2.85 | 2.83 | 2.88 | 3.01 | +0.16 |
+| Mean MaxDD | 6.19% | 7.06% | 7.70% | **5.84%** | **-0.35pp (best)** |
+| **MaxDD P90** | 12.87% | 14.40% | 15.41% | **11.79%** | **-1.08pp (first time below v3)** |
+| **Worst Sharpe** | -5.78 | -5.57 | -5.80 | **-5.38** | **+0.40 (first real lift)** |
+| Mean Terminal | 99,625 | 100,556 | 101,421 | 100,189 | +564 |
+| Terminal P10 | 91,141 | 91,267 | 90,724 | **92,505** | **+1,364 (best)** |
+
+Plan C is the **first version where every tail-risk metric improves vs
+v3** simultaneously (MaxDD P90, worst Sharpe, mean MaxDD, terminal P10),
+while across-seed reproducibility also reaches its best (std 0.25).
+
+**Action distribution flipped from aggressive duo to mid-defensive trio:**
+
+| Action | v2 | **Plan C** | Role |
+|---|---|---|---|
+| #9 | 13.4% | **35.7%** | mid-risk balanced (new dominant) |
+| #11 | 1.0% | **17.1%** | mid-risk (barely used before) |
+| #3 | 1.1% | **15.5%** | defensive (first time used) |
+| #14 | 7.5% | 8.4% | |
+| #6 | 14.4% | 5.5% | |
+| #15 (all-in NVDA) | 21.0% | **4.2%** | aggressive collapsed |
+| #12 (UNH+AAPL+NVDA) | 24.3% | **0.5%** | aggressive collapsed |
+
+The aggressive duo #12+#15 went from 45.3% in v2 to 4.7% in Plan C; the
+mid-defensive trio #3+#9+#11 went from 15.5% to 68.3%. This is the
+conditional-defense behavior the mentor's reward suggestion was meant to
+produce — and Plan C achieves it WITHOUT a regime gate, because the
+penalty mechanism is action-dependent by construction.
+
+**Cost:** Success rate -1.0 (3% of windows), within-seed Sharpe std +0.16.
+The within-window variance reflects evaluation-period regime diversity
+(conservative policy "leaves money on the table" in bull windows), not
+strategy noise.
+
+**Verdict:** Plan C is the Week 5 deliverable. Trade-off (~1 missed
+success rate point for across-the-board tail-risk improvement) is exactly
+the type of result the v3 diagnosis called for.
+
+**Narrative for paper / mentor:** "Three reward designs were tested.
+Asymmetric loss amplification (lambda on stress days) produced higher mean
+Sharpe but worse tail risk because random-action episodes cannot
+differentiate actions within a regime under uniform loss scaling. An
+explicit drawdown penalty — which is action-dependent by construction —
+successfully transferred the protective signal to action selection,
+achieving the first across-the-board tail-risk improvement (MaxDD P90
+12.87% → 11.79%, worst Sharpe -5.78 → -5.38, across-seed std 0.27 →
+0.25)."
+
+### Locked next step — Week 6: CQL on top of Plan C reward
+
+Plan C reward is now frozen as the Week 6 baseline. Add CQL penalty to
+critic loss: `α * (logsumexp(Q_all) - Q_behavior)`. Target: lift worst
+Sharpe from -5.38 toward -4, MaxDD P90 below 10%, without losing the
+action-diversity gains. If mean Sharpe collapses below 0.20, α too high.
+
+Requires custom training loop (`trainFromData` doesn't support custom
+losses; need manual minibatch loop with `dlfeval` + custom gradient).
 
 ### Reference Papers Consulted for Week 5 Reward Design
 
