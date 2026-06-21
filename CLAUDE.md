@@ -404,15 +404,120 @@ achieving the first across-the-board tail-risk improvement (MaxDD P90
 12.87% → 11.79%, worst Sharpe -5.78 → -5.38, across-seed std 0.27 →
 0.25)."
 
-### Locked next step — Week 6: CQL on top of Plan C reward
+### Week 6.0: Stress-Day Oversampling on Plan C (`src/week6_oversample_0.mlx`)
 
-Plan C reward is now frozen as the Week 6 baseline. Add CQL penalty to
-critic loss: `α * (logsumexp(Q_all) - Q_behavior)`. Target: lift worst
-Sharpe from -5.38 toward -4, MaxDD P90 below 10%, without losing the
-action-diversity gains. If mean Sharpe collapses below 0.20, α too high.
+**Motivation (mentor suggestion #2 on Week 6):** test 2022-2024 is mostly
+in stress regime while train 2010-2017 is mostly normal — distribution
+mismatch is suspected to be the main reason Plan C's tail still hurts.
+Plan: reweight episode starts so train stress occupation approaches test.
 
-Requires custom training loop (`trainFromData` doesn't support custom
-losses; need manual minibatch loop with `dlfeval` + custom gradient).
+**Config delta vs Plan C:** only episode-start sampling. Per-day stress
+intensity `stressScore(t) = max(0, VIX_z(t)) + max(0, -T10Y2Y_z(t))`,
+window weight = sum over horizon + epsilon. Episode starts drawn via
+`randsample(starts, N, true, weight)`. EPSILON_WEIGHT=0.5. Reward,
+network, agent, eval — all identical to Plan C. CQL (the original Week 6
+plan) deferred indefinitely after mentor pivoted to regime + drawdown
+combination.
+
+**Stress diagnostic before training:**
+- Train baseline stress rate: **17.4%** (uniform-sample proxy)
+- Test stress rate (target): **73.8%** — 56pp gap, much wider than the
+  20-25pp originally guessed
+- After weighted sampling: train stress occupation rose to **40.6%** (still
+  well below test, but +23pp lift)
+
+**Cross-seed results vs Plan C:**
+
+| Metric | Plan C | **6.0** | Direction |
+|---|---|---|---|
+| Success rate | 10.6 | **14.8** | ↑↑ |
+| Mean Sharpe | 0.36 | **0.62** | ↑↑ |
+| Across-seed std | 0.25 | 0.65 | ↑ (worse) |
+| Mean MaxDD | 5.84% | 8.48% | ↑ (worse) |
+| **MaxDD P90** | **11.79%** | **18.04%** | ↑↑ (much worse) |
+| **Worst Sharpe** | **-5.38** | -5.31 | ~flat |
+| Mean Terminal | 100,189 | 102,256 | ↑ |
+| Terminal P10 | 92,505 | 89,153 | ↓ |
+
+Strongly **bimodal per-seed**: seeds 1000-3000 stayed conservative (Sharpe
+0-0.5, MaxDD 6-8%), seeds 4000-5000 went aggressive (Sharpe 1.0-1.6, MaxDD
+10-12%, success 19/30). Action histogram flipped from Plan C's mid-defensive
+trio (#3+#9+#11=68%) to a barbell #15(NVDA all-in, 29.6%) + #4(23.6%).
+
+**Diagnosis — oversampling backfired:** the high-weight stress windows in
+2010-2019 are all *V-shaped panics* (2011 euro debt, 2015 oil crash, 2018Q4
+hike scare) followed by sharp recoveries. Upweighting these taught the
+agent "stress = buy-the-dip opportunity" — exactly the wrong reflex for
+2022's persistent 12-month grind-down. The mean-Sharpe lift came from
+seeds that happened to pick stocks that recovered; the tail destruction
+came from the same reflex being misapplied to test stress.
+
+**Conclusion:** oversampling without the right data structure amplifies
+the wrong signal. Need to fix the data itself before any reweighting helps.
+
+### Week 6.0b: Extended Train (2010-2021) with COVID exposure (`src/week6_oversample_b.mlx`)
+
+**Motivation:** the previously-unused val split (2020-2021, carved out for
+hyperparameter tuning but never used) contains the COVID March 2020 crash
++ 2020-2021 low-rate era — the closest analogue we have to the 2022 stress
+regime. Merging it into train (via `scripts/merge_train_val.py`) extends
+train to 3020 days (was 2515) without any test leakage. Same script run in
+two stages: stage 1 disables oversampling (isolates the data contribution),
+stage 2 re-enables it (measures incremental oversampling effect on the
+extended dataset).
+
+**Stage 1 — Extended train + uniform sampling (no oversampling):**
+
+| Metric | Plan C | 6.0 | **6.0b s1** |
+|---|---|---|---|
+| Success rate | 10.6 | 14.8 | 12.8 |
+| Mean Sharpe | 0.36 | 0.62 | 0.55 |
+| Across-seed std | 0.25 | 0.65 | **0.32** |
+| Mean MaxDD | 5.84% | 8.48% | 8.04% |
+| MaxDD P90 | **11.79%** | 18.04% | 15.71% |
+| Worst Sharpe | **-5.38** | -5.31 | -5.79 |
+| Terminal P10 | 92,505 | 89,153 | 89,921 |
+
+Sits between Plan C and 6.0 on tail metrics. Action distribution is the
+most diverse of any version (#11=21%, #15=18%, #10=17%, #7=16%, #2=13% —
+no action above 22%), suggesting genuine state-dependent decisions. Some
+bimodality persists (seed 4000 went aggressive, Sharpe 1.09 / MaxDD 13.9%).
+
+**Stage 2 — Extended train + oversampling re-enabled:**
+
+| Metric | Plan C | 6.0 | 6.0b s1 | **6.0b s2** |
+|---|---|---|---|---|
+| Success rate | 10.6 | 14.8 | 12.8 | 14.2 |
+| Mean Sharpe | 0.36 | 0.62 | 0.55 | 0.51 |
+| Across-seed std | 0.25 | 0.65 | 0.32 | 0.51 |
+| MaxDD P90 | **11.79%** | 18.04% | 15.71% | 17.98% |
+| **Worst Sharpe** | **-5.38** | -5.31 | -5.79 | **-5.99** ← worst |
+| Terminal P10 | **92,505** | 89,153 | 89,921 | 88,471 |
+
+Adding oversampling on top of the extended data **recreated the same
+tail-risk damage** seen in 6.0 (MaxDD P90 back up to 17.98%, worst Sharpe
+new low at -5.99). The bimodal per-seed pattern reappeared (seed 1000
+Sharpe 1.01 / MaxDD 13.8%; seed 4000 Sharpe -0.34).
+
+**Two-fold conclusion:**
+
+1. **Oversampling is the wrong tool, full stop.** It hurt tail risk in
+   both datasets (6.0 on old data, 6.0b s2 on extended data). The
+   mechanism — upweighting V-shaped recovery windows — is dataset-
+   independent. Drop this approach.
+
+2. **Data extension alone is helpful but not sufficient.** 6.0b s1 is
+   more stable (across-seed std 0.32 vs Plan C 0.25) and has cleaner
+   action diversity, but still doesn't beat Plan C on tail. COVID 2020
+   is a *V-shaped* event itself (5-week crash, 2-month recovery), so it
+   still teaches partial buy-the-dip. 2022's persistent grind has no
+   true analogue in any of our train data.
+
+**Locked next step — Week 6.1:** combine the validated ingredients
+(extended train + uniform sampling + drawdown penalty) with mentor
+suggestion #1 (regime gate) applied to the *action-dependent* drawdown
+penalty rather than the action-independent loss multiplier that failed in
+Week 5 v1/v2.
 
 ### Reference Papers Consulted for Week 5 Reward Design
 
