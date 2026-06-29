@@ -619,6 +619,125 @@ policy is correct for the training distribution but mislabeled by test."
 - Add CVaR-style hard floor on the drawdown penalty to attack worst-case
 - Accept 6.1 and move to Week 7 backtesting / baseline comparison
 
+### Week 7.0: Binary Stress Flag in State (`src/week7_0_state_stress.m`)
+
+**Motivation:** 6.1 achieved the first regime-conditional behavior of the
+project (5 actions diverged ≥5pp between stress and normal test days), but
+the direction was counterintuitive — in stress the agent went MORE
+aggressive. Diagnosis: regime info reached the policy only indirectly
+through the gated drawdown penalty in the reward signal. 7.0 puts the
+stress flag DIRECTLY into the state vector so the Q network can condition
+its estimate explicitly on regime.
+
+**Config delta vs 6.1 (only one structural change):** state extended 6D
+→ 7D by appending `double(isStressDay(dayIdx))`. Same extended train
+(2010-2021), same uniform episode sampling, same 6.1 reward (regime-gated
+β = 8.0 / 2.0 unchanged). Same network width, agent options, eval protocol.
+All five obs construction sites (episode obs, episode nextObs, eval obs)
+append the binary flag. Reuses the `isStressDay_train` / `isStressDay_test`
+vectors already built in 6.1.
+
+**New diagnostic — Q-gap**: after training, collect 300 non-stress train
+obs (stress=0), synthesize stress=1 twins by flipping the 7th dim, compute
+`mean(|Q(stress=1) − Q(stress=0)|)`. Tests whether the network actually
+uses the new dimension. Target: > 0.02 (binary flag is being read);
+< 0.01 means the network ignored it entirely.
+
+**Cross-seed results:**
+
+| Metric | Plan C | 6.1 | **7.0 (binary)** |
+|---|---|---|---|
+| Success rate | 10.6 | **14.6** | 13.6 |
+| Mean Sharpe | 0.36 | **0.66** | 0.54 |
+| Across-seed std (Sharpe) | **0.25** | 0.23 | **0.55** ← exploded |
+| Mean MaxDD | **5.84%** | 7.78% | 8.40% |
+| MaxDD P90 | **11.79%** | 15.75% | 16.88% |
+| Worst Sharpe | **-5.38** | -6.37 | **-6.87** ← worst |
+| Terminal P10 | 92,505 | 89,758 | 91,387 |
+| **Q-gap mean** | n/a | n/a | **2.24** (target was >0.02 — 100× over) |
+| Q-gap range | n/a | n/a | 0.23 → 6.67 |
+
+**Three findings:**
+
+1. **Mechanism works**: Q-gap 2.24 is 100× the threshold. The network is
+   absolutely using the 7th dim. State conditioning is real, not ignored.
+
+2. **Action direction partially flipped (the desired direction)** — first
+   time in any version:
+   - Defensive #1: stress 7.1% / normal 0.3% → +6.8pp **diverges**
+   - Defensive #2: stress 9.2% / normal 0.0% → +9.2pp **diverges**
+   - Aggressive #14: stress 2.4% / normal 11.9% → −9.4pp **diverges**
+
+   But #12 (UNH+AAPL+NVDA, mid-aggressive) jumped to +19.1pp in stress,
+   muddying the picture: not a clean "stress → defensive" but more like
+   "stress → concentrate on a specific aggressive blend".
+
+3. **Across-seed instability exploded**: Sharpe std 0.23 → 0.55. Per-seed
+   Q-gap variance is 0.23 to 6.67 (30× spread) — seed 4000 latched onto
+   the stress flag heavily, seeds 2000/5000 mostly ignored it. Adding a
+   binary feature gave the network an extra degree of freedom that each
+   seed used differently. Mean Sharpe regressed 0.66 → 0.54 and worst
+   Sharpe hit a new low of −6.87.
+
+**Verdict:** state conditioning is mechanistically viable but a sharp
+(binary) input creates seed-dependent overfitting. Continuous variant (7.0b)
+should follow to test whether a smoother input signal stabilizes the
+across-seed behavior.
+
+### Week 7.0b: Continuous Stress Score in State (`src/week7_0b_state_stress_continuous.m`)
+
+**Motivation:** 7.0 binary worked mechanistically (Q-gap 2.24) but exploded
+across-seed variance because each seed latched onto the binary flag
+differently. Hypothesis: smooth input gives more stable gradients across
+seeds, narrowing the per-seed Q-gap variance and reducing Sharpe std.
+
+**Config delta vs 7.0:** the binary `isStressDay` flag in the 7th state
+dim is replaced by a continuous normalized stress score in [0, 1]:
+```
+stressScoreRaw(t) = max(0, VIX_z(t)) + max(0, -T10Y2Y_z(t))
+stressP99         = prctile(stressScoreRaw_train(1:trainingRange), 99)
+stressScore(t)    = min(stressScoreRaw(t) / stressP99, 1)
+```
+Train-only P99 normalizer (no test leakage). Applied uniformly to train
+and test scores. The reward gate stays BINARY (β = 8.0 / 2.0 unchanged
+from 6.1/7.0) so the only changed variable is the state input's
+smoothness.
+
+**Cross-seed results (4-way comparison):**
+
+| Metric | 6.1 | 7.0 binary | **7.0b cont.** |
+|---|---|---|---|
+| Success rate | **14.6** | 13.6 | 13.8 |
+| Mean Sharpe | **0.66** | 0.54 | 0.57 |
+| Across-seed std | **0.23** | 0.55 | **0.37** ← partial improvement |
+| Mean MaxDD | **7.78%** | 8.40% | 9.76% |
+| MaxDD P90 | **15.75%** | 16.88% | **19.80%** ← new worst |
+| Worst Sharpe | **-6.37** | -6.87 | -6.56 |
+| Terminal P10 | 89,758 | **91,387** | 88,580 |
+| Q-gap mean | n/a | 2.24 | 1.91 |
+| Q-gap range | n/a | 0.23–6.67 | 0.12–5.24 |
+
+**Hypothesis partially confirmed, overall result worse:**
+
+- ✓ **Across-seed std improved** (0.55 → 0.37) but did NOT hit the ≤0.30
+  target. Smoothing helps, but not enough on its own.
+- ✗ **Action direction got WORSE, not better.** Stress→#15 (NVDA 100%)
+  rose to 35.8% — the most aggressive possible action, in the worst
+  possible regime. 7.0's partial defensive shift on #1/#2 (the only
+  positive signal we had) was completely washed out.
+- ✗ **MaxDD P90 19.80% — new worst across all 6+ versions.** Terminal P10
+  dropped below all prior versions.
+- ✗ Per-seed Q-gap range nearly unchanged (40× spread vs 7.0's 30×).
+
+**Three-attempt verdict on state extension:** across 6.1 (reward gate),
+7.0 (binary state), and 7.0b (continuous state), no mechanism produces a
+clean stress→defensive policy. The root cause is the same as identified
+in 6.1: every train-period stress event (including COVID 2020) is followed
+by sharp recovery, so the reward signal under any conditioning scheme
+ends up rewarding aggressive in stress. Three independent methods now
+converge on this conclusion — it's a data limitation, not a method
+limitation.
+
 ### Reference Papers Consulted for Week 5 Reward Design
 
 1. Moody & Saffell (1998) *Reinforcement Learning for Trading*, NeurIPS —
