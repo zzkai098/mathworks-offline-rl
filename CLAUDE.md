@@ -846,6 +846,82 @@ No single version dominates; they sit on a Pareto frontier across
 as the three RL strategies to compare against classical baselines
 (buy-and-hold, 60/40, MVO, MSP/CVaR) in Week 7 backtesting.
 
+### Week 8: On-Frontier Fix + Cost-Aware Backtest (`src/week8_ddpg_onfrontier.m`, `src/week8_backtest_harness.m`)
+
+Two things before CQL: (1) fix a portfolio-construction flaw the mentor
+flagged in the Week 7 DDPG, (2) add the missing evaluation spine (transaction
+cost, a classical baseline, and statistical-honesty). Scope narrowed with the
+user to lane **B (tactical / risk-adjusted return)**, **daily** rebalancing,
+and a **single 60/40** baseline (Plan C dropped; MVO / risk-parity / equal-
+weight dropped to keep it lean).
+
+**Mentor's issue — DDPG portfolios were not on the frontier.** Week 7 mapped
+α∈[0,1] to weights by linearly interpolating adjacent frontier portfolios.
+Expected return is linear in weights but variance is convex, so a convex blend
+has the right return but a variance *above* the true frontier at that return —
+an interior, mean-variance-suboptimal point (equality only within a single
+linear frontier segment; a blend straddling a corner dips inside). Quantified:
+
+| α-interpolation basis | max residual variance gap |
+|---|---|
+| 15-pt (Week 7) | **1.654e-06** (~13 bp daily-vol-equivalent) |
+| 200-pt dense (Week 8) | **3.339e-09** (~500× smaller — on the frontier) |
+
+Fix: build a dense frontier once via `estimateFrontierByReturn` over 200 target
+returns and interpolate α over that (no per-step QP; the script prints the gap
+as a diagnostic). Because the α→weights map changed, DDPG was **retrained** on
+the corrected basis (5 seeds). 6.1 is unaffected — it uses the 15 discrete
+frontier points directly, each a true frontier portfolio.
+
+**Cost-aware harness.** Replays 6.1 + corrected DDPG through the same 30 eval
+windows, adds a 60/40 daily constant-mix baseline, charges a drift-aware
+turnover cost `turnover_t = sum|w_t − w_{t-1}^{drift}|` swept over 0/5/10/20 bp,
+and reports net Sharpe with a **block-bootstrap 95% CI** (block ≈ horizon, to
+respect the overlapping windows) and a **Deflated Sharpe Ratio** (Bailey &
+López de Prado, trial count ≈ 10). Shared utils: `src/utils/inputTestData.m`,
+`blockBootstrapSharpeCI.m`, `deflatedSharpe.m`.
+
+**Sanity check passed:** at cost 0, 6.1 reproduces the Week 6 numbers exactly
+(Sharpe 0.66, MaxDD P90 15.75%, Terminal P10 89758, success 14.6/30),
+confirming the harness rebuilds state correctly.
+
+**Results (net Sharpe by cost):**
+
+| cost | 6.1 | DDPG (on-frontier) | 60/40 |
+|---|---|---|---|
+| 0 bp  | 0.66 | 0.35 | 0.51 |
+| 10 bp | 0.57 | 0.32 | 0.49 |
+| 20 bp | 0.47 | 0.29 | 0.47 |
+| turnover/step | 0.107 | 0.035 | **0.009** |
+| MaxDD P90 | 15.97% | 12.06% | **8.66%** |
+| Terminal P10 | 89376 | 92434 | **95325** |
+
+**Honest reading (not the naive "6.1 wins" headline):**
+1. **No Sharpe is statistically distinguishable.** At 10 bp the 95% block-
+   bootstrap CIs are 6.1 [−0.21, 0.74], DDPG [−0.05, 0.83], 60/40 [−0.84, 1.23]
+   — all overlap and all include 0. With 30 overlapping 30-day windows in a
+   single test regime, the effective sample is too small to separate them.
+2. **60/40 wins on tail risk** — half the MaxDD P90 (8.66% vs 15.97%), highest
+   Terminal P10, at 1/12 the turnover. 6.1's nominally higher Sharpe is bought
+   with ~2× drawdown.
+3. **Deflated Sharpe** — after the multiple-testing haircut (~10 configs tried),
+   6.1's DSR falls to 0.28 at 10 bp; none clears 0.5 convincingly.
+
+**Headline for the report/mentor:** *"Net of transaction costs, the two RL
+allocators and a naive 60/40 have statistically indistinguishable risk-adjusted
+returns (all Sharpe CIs overlap and include zero); 6.1's nominal edge costs ~2×
+drawdown and 12× turnover and does not survive the multiple-testing haircut,
+while 60/40 gives better tail risk at negligible turnover. This is an honest
+limitation of offline RL under a single test regime and small samples, not a
+single algorithm's failure."*
+
+**Seed collapse persists** in the on-frontier DDPG (3/5 seeds collapse to α≈0),
+exactly as diagnosed in Week 7 — vanilla DDPG has no offline pessimism, so the
+actor slides to the OOD Q-peak. This is the direct motivation for **CQL** next:
+its `α·(logsumexp Q − Q_behavior)` penalty is designed to suppress precisely
+this OOD over-confidence. Fixing the frontier did not (and should not) change
+the stability problem; it only put the portfolios back on the frontier.
+
 ### Reference Papers Consulted for Week 5 Reward Design
 
 1. Moody & Saffell (1998) *Reinforcement Learning for Trading*, NeurIPS —
