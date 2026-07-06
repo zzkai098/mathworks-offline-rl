@@ -855,7 +855,7 @@ user to lane **B (tactical / risk-adjusted return)**, **daily** rebalancing,
 and a **single 60/40** baseline (Plan C dropped; MVO / risk-parity / equal-
 weight dropped to keep it lean).
 
-**Mentor's issue — DDPG portfolios were not on the frontier.** Week 7 mapped
+**Issue — DDPG portfolios were not on the frontier.** Week 7 mapped
 α∈[0,1] to weights by linearly interpolating adjacent frontier portfolios.
 Expected return is linear in weights but variance is convex, so a convex blend
 has the right return but a variance *above* the true frontier at that return —
