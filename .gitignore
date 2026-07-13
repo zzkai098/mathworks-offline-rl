@@ -10,6 +10,7 @@ sccprj/
 # Training artifacts (regeneratable, large)
 logs_gbwm_offline/
 *.mat
+*.log
 experiments/logs/*
 !experiments/logs/.gitkeep
 
