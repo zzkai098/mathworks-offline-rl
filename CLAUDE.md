@@ -9,6 +9,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Mentor:** Yuchen Dong (MathWorks)
 - **Reference paper:** Unnikrishnan, *Financial News-Driven LLM RL for Portfolio Management*
 
+## ⭐ Current Direction — GBWM P(goal) study (branch `gbwm-pgoal-study`, folder `gbwm_pgoal/`)
+
+The project **pivoted** away from "beat 60/40 on net Sharpe over real 2022-2025
+returns" after a power analysis proved that target **statistically unachievable
+on the available data** (~600 test days → Sharpe SE ≈ 0.65; every CI includes 0;
+CQL, though it cured the DDPG seed collapse, is indistinguishable from 60/40 net
+of cost). The current work is a new, self-contained **MATLAB** study in
+`gbwm_pgoal/` reframed as an **honest offline-RL sample-efficiency study**:
+
+- **Game:** GBWM-native **P(goal)** (max P(terminal wealth ≥ goal)); 10-yr annual,
+  15 efficient-frontier actions, state = (wealth, time, regime). Macro enters via
+  the mentor's **regime gate** (`VIX_z>1.5 OR T10Y2Y_z<-1.5`); the mentor's
+  **regime-gated drawdown penalty** (β=8/2) is a reward variant.
+- **Key enabler:** at this low-dim state, **dynamic programming gives the exact
+  optimum** → a *measurable ceiling* to ask "does offline pessimism (CQL/IQL)
+  recover more of the DP optimum than vanilla RL as the logged dataset shrinks?"
+- **Results:** dynamics beats best-static **+0.098** (regime +0.028); **IQL most
+  sample-efficient** (gap-to-DP 0.02 @5000 episodes); naive CQL(α=1) is
+  mis-scaled for [0,1] rewards, competitive at α≈0.01; drawdown shaping cuts MaxDD
+  **25-42%** (IQL-shaped tail below the tail-blind DP optimum).
+- **Honesty boundary:** everything runs on a return model **calibrated to
+  2010-2019 + Monte-Carlo eval** — simulation-based; P(goal) *levels* are
+  simulator-bound (a 10-yr horizon can't be validated on real data). What
+  transfers is method-level (IQL sample efficiency, CQL α-scaling) + structural
+  (dynamics > static).
+- **Files:** `gbwm_pgoal/{gbwm.m, dp/preflight.m, offline/train_offline.m,
+  experiments/{sweep,cql_alpha_sweep,drawdown_variant}.m, experiments/ledger.md,
+  README.md}`; validated Python prototype in `gbwm_pgoal/_prototype_python/`.
+  Run: `addpath('gbwm_pgoal'); addpath('gbwm_pgoal/offline'); addpath('gbwm_pgoal/experiments');`
+  then `preflight` / `sweep` / `cql_alpha_sweep` / `drawdown_variant`.
+
+Everything below documents the **prior (Weeks 4-8) direction** that led here.
+
 ## MATLAB Setup
 
 **Required:** MATLAB R2025b with toolboxes: Reinforcement Learning, Financial, Statistics & Machine Learning, Deep Learning, Optimization.
