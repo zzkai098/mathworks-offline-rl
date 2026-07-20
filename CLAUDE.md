@@ -1053,6 +1053,7 @@ P(goal) | mean MaxDD | 10th-pct terminal wealth
 | DP optimum (tail-blind) | 0.756 | 0.101 | 842 |
 | best static | 0.629 | 0.303 | 499 |
 | vanilla pure → shaped | 0.677 → 0.662 | 0.169 → 0.125 | 610 → 743 |
+| CQL pure → shaped | 0.677 → 0.658 | 0.180 → 0.135 | 607 → 755 |
 | IQL pure → shaped | 0.722 → 0.658 | 0.139 → **0.081** | 559 → 734 |
 
 Shaping cuts mean MaxDD 25-42% and lifts downside termP10 20-31% at a modest
