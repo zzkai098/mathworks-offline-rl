@@ -973,3 +973,99 @@ the stability problem; it only put the portfolios back on the frontier.
    loss aversion lambda baked into reward; supports λ ∈ [2.0, 2.5].
 5. *Risk-Sensitive Reward-Free RL with CVaR* (Ni et al., ICML 2024) —
    theoretical anchor for CVaR-based reward-free framework, PAC-efficient.
+
+---
+
+# Meeting Report (2026-07-12) — CQL results, the pivot, and the P(goal) study
+
+This is the weekly progress report (mirrors the mentor email). Three parts: what
+CQL achieved on the previous setup, why I pivoted, and the new direction + results.
+
+## 1. CQL on the previous (historical-Sharpe) setup
+CQL on the DDPG frontier-allocation agent (hand-written `dlfeval` loop, since
+`trainFromData` doesn't expose a custom critic loss) **cured the DDPG seed
+collapse** — 3/5 seeds no longer saturate at the defensive boundary — and the
+winner (α=1) was the most reproducible across seeds. **But** after a cost-aware
+backtest (block-bootstrap Sharpe CI + Deflated Sharpe): **net of cost, CQL is
+statistically indistinguishable from 60/40** (all Sharpe CIs overlap and include
+0). Power analysis: ~600 test days → Sharpe SE ≈ 0.65, so detecting the ~0.1 edge
+that exists needs decades of independent multi-regime data. **"Beat 60/40 on
+Sharpe" is unachievable on this data by any algorithm** — not a CQL limitation.
+
+## 2. Why I pivoted
+Moved to the **GBWM-native P(goal)** objective (max P(terminal wealth ≥ goal)).
+At this low-dim state, **DP gives the exact optimum** → a *measurable ceiling* to
+ask: *does offline pessimism (CQL/IQL) recover more of the DP optimum than vanilla
+RL as the logged dataset shrinks?*
+
+## 3. New direction — approach & results (MATLAB, `gbwm_pgoal/`)
+Setup: return model fit on TRAIN 2010-2019 only; 10-yr annual GBWM, W0=100,
+contrib 10/yr, 15 efficient-frontier actions, state = (wealth, time, regime);
+macro via the regime gate `VIX_z>1.5 OR T10Y2Y_z<-1.5`; regime-gated drawdown
+penalty (β=8/2) as a reward variant. **goal=1949** calibrated so the DP ceiling
+P(goal) ≈ 0.75. All policies MC-evaluated (100k paths) under the true regime
+model; DP + eval cross-validated vs an independent NumPy prototype.
+
+**A. Pre-flight — winnable by dynamics? (P(goal))**
+
+| policy | P(goal) |
+|---|---|
+| regime-aware DP (ceiling) | 0.751 |
+| regime-agnostic DP | 0.723 |
+| best static mix | 0.625 |
+| 60/40 | 0.000 |
+
+Dynamics (agnostic − static) **+0.098**; regime (aware − agnostic) **+0.028**;
+combined over best-static **+0.125** → won by *dynamics*, not more equity. (60/40
+= 0 at the stretch → baseline switched to best-static.)
+
+**B. PRIMARY — gap-to-DP vs offline dataset size** (gap = 0.750 − P(goal); mean
+of 5 seeds; random-over-frontier behavior)
+
+| episodes | vanilla | CQL (α=1) | IQL |
+|---|---|---|---|
+| 50 | 0.165 | 0.402 | 0.149 |
+| 200 | 0.118 | 0.185 | 0.109 |
+| 500 | 0.115 | 0.133 | **0.072** |
+| 2000 | 0.073 | 0.119 | **0.028** |
+| 5000 | 0.033 | 0.062 | **0.021** |
+
+**IQL is most sample-efficient** (0.02 gap by 5000). vanilla is a solid baseline.
+Naive CQL(α=1) worst — a reward-scale artifact (see C).
+
+**C. CQL α-sensitivity** — [0,1] rewards make the CQL penalty ~50× the TD loss at
+α=1; reward-scaled α≈0.01.
+
+| episodes | CQL α=0.01 | vanilla | IQL |
+|---|---|---|---|
+| 100 | 0.137 | 0.126 | 0.157 |
+| 500 | **0.062** | 0.115 | 0.072 |
+| 2000 | 0.050 | 0.073 | **0.028** |
+
+At α≈0.01 CQL is competitive (beats vanilla at 500/2000) but α-sensitive; IQL
+needs no tuning.
+
+**D. Drawdown-shaping variant (regime-gated penalty β=8/2)** — 2000 episodes;
+P(goal) | mean MaxDD | 10th-pct terminal wealth
+
+| policy | P(goal) | MaxDD | termP10 |
+|---|---|---|---|
+| DP optimum (tail-blind) | 0.756 | 0.101 | 842 |
+| best static | 0.629 | 0.303 | 499 |
+| vanilla pure → shaped | 0.677 → 0.662 | 0.169 → 0.125 | 610 → 743 |
+| IQL pure → shaped | 0.722 → 0.658 | 0.139 → **0.081** | 559 → 734 |
+
+Shaping cuts mean MaxDD 25-42% and lifts downside termP10 20-31% at a modest
+P(goal) cost; **IQL-shaped's MaxDD (0.081) is below the tail-blind DP optimum
+(0.101)**. IQL-shaped also **dominates best-static on all three metrics** (the
+"beat baseline" result, framed as effect size + attribution — an MC p-value is
+trivially small at N=100k and is not the claim).
+
+## Honesty boundary / open question for the mentor
+Everything runs on a **train-calibrated return model + Monte-Carlo eval** —
+simulation-based (the standard for GBWM lifecycle work; a 10-yr horizon can't be
+validated on real data without centuries). P(goal) *levels* are simulator-bound;
+what transfers is method-level (IQL sample efficiency, CQL α-scaling) + structural
+(dynamics > static). **Open question:** keep this simulation framing (with a DP
+ceiling and real statistical power), or **shorten the horizon and backtest on
+real historical data** (trading the ceiling/power for realized-market evaluation)?
