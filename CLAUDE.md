@@ -1069,3 +1069,14 @@ what transfers is method-level (IQL sample efficiency, CQL α-scaling) + structu
 (dynamics > static). **Open question:** keep this simulation framing (with a DP
 ceiling and real statistical power), or **shorten the horizon and backtest on
 real historical data** (trading the ceiling/power for realized-market evaluation)?
+
+**Why a bigger test split can't rescue the real-data route (pre-empting the
+obvious suggestion):** the *total* budget is only ~15 years ≈ 3,800 days. Even
+using all of it as test, the Sharpe standard error is ≈ √(252/3800) ≈ **0.26**.
+Detecting the ~0.1 edge needs the SE near 0.05 → **~10,000 days ≈ 40 years of
+independent data** — about an order of magnitude short. And these 15 years are
+essentially **one long bull regime**, so extra days are autocorrelated, not
+independent samples (a block bootstrap correctly discounts them). Power needs
+**independent, multi-regime observations, not more days** — so no train/test
+re-split manufactures it, which is precisely why the simulation + DP-ceiling
+route is the honest escape.
