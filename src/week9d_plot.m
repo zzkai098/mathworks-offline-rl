@@ -10,17 +10,28 @@ f = figure('Visible','off','Position',[100 100 1250 480]);
 % Panel 1: Q divergence A/B (log-y)
 subplot(1,2,1); hold on;
 hC=[]; hD=[];
+MEg = [50 100 200 400];
+hC=[]; hD=[]; hM=[];
 for s = seeds
     c = sortrows(C(C.seed==s,:),'ME');
     hC = semilogy(c.ME, c.qGlobal, '--o','Color',[0.85 0.2 0.2],'LineWidth',1.5);
     d = D(D.tsf==1e-3 & D.seed==s,:); d = sortrows(d,'ME');
-    hD = semilogy(d.ME, d.qGlobal, '-o','Color',[0.1 0.5 0.85],'LineWidth',2);
+    hD = semilogy(d.ME, d.qGlobal, '-o','Color',[0.1 0.5 0.85],'LineWidth',1.6);
+    % full fix = Polyak tau=1e-3 + LR 1e-4 (from the week10 matrix DQN cells)
+    qm = nan(1,4);
+    for k=1:4
+        fm = sprintf('experiments/logs/matrix/dqn_s%d_me%d.csv', s, MEg(k));
+        if isfile(fm); r=readmatrix(fm); qm(k)=r(5); end
+    end
+    hM = semilogy(MEg, qm, '-s','Color',[0.1 0.6 0.2],'LineWidth',2.2);
 end
 set(gca,'YScale','log');
 yline(1.2,':k','economic ceiling ~1.2','LineWidth',1.2);
 xlabel('training epochs (MaxEpochs)'); ylabel('val mean max_a Q  [log]');
-title('Slowing the target update bounds Q (ME\leq200)');
-legend([hC hD],{'week9c: periodic-every-4 (diverges)','week9d: Polyak \tau=1e-3'},'Location','northwest');
+title('Target update + LR: partial vs full fix of the divergence');
+legend([hC hD hM], {'periodic-every-4 (6.1: diverges)', ...
+    'Polyak \tau=1e-3 (bounds ME\leq200, residual at 400)', ...
+    'Polyak \tau=1e-3 + LR 1e-4 (full fix: flat)'}, 'Location','northwest');
 grid on;
 
 % Panel 2: across-seed spread of Q at each ME (min-max band), A/B

@@ -1137,9 +1137,18 @@ independence assert.
 - **Both BOUNDED** across all seeds/ME (gate passed). tuned-DQN Q 0.71-1.86 (creeps above
   the ~1.14 economic ceiling at ME400, still rising); IQL Q 0.24-0.96 (always under
   ceiling, flat). IQL@LR1e-4 also bounded (no-LR-babysitting demonstrated).
-- **Deciding metric (across-seed eval-Sharpe std): NULL.** DQN 0.160 vs IQL 0.190
-  (mean ME100-400) — n=3 noise, non-monotone, crossing. Mean eval Sharpe ~0.4-0.7 both,
-  error bars overlap everywhere; neither beats 60/40 (known power limit).
+- **Deciding metric (across-seed eval-Sharpe): NULL.** Per-seed eval Sharpe
+  (s1000/s2000/s3000) — the raw numbers make the crossing/no-winner obvious:
+
+  | ME  | tuned-DQN | IQL |
+  |-----|-----------|-----|
+  | 100 | 0.86 / 0.67 / 0.43 | 0.70 / 0.34 / 0.46 |
+  | 200 | 0.72 / 0.62 / 0.27 | 0.62 / 0.34 / 0.23 |
+  | 400 | 0.53 / 0.52 / 0.47 | 0.65 / 1.01 / 0.85 |
+
+  Across-seed std: DQN 0.160 vs IQL 0.190 (mean ME100-400) — n=3 noise, non-monotone,
+  crossing (DQN tighter at ME400, IQL at ME100). Mean eval Sharpe ~0.4-0.7 both, error
+  bars overlap everywhere; neither beats 60/40 (known power limit).
 
 ## Ship decision + honest framing
 **Primary deliverable = tuned-DQN (Polyak tau=1e-3 + LR 1e-4) = "fixed 6.1"** (honors
