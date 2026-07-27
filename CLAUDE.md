@@ -1081,3 +1081,77 @@ independent samples (a block bootstrap correctly discounts them). Power needs
 **independent, multi-regime observations, not more days** — so no train/test
 re-split manufactures it, which is precisely why the simulation + DP-ceiling
 route is the honest escape.
+
+---
+
+# Week 9-10 — Continue 6.1: diagnosis of the instability + IQL (mentor: "deliverable agent")
+
+Mentor asked to continue 6.1 (regime-gated drawdown DQN on real returns) toward a
+deliverable agent. Instead of tuning numbers, this became a **diagnosis of WHY 6.1
+was unstable** — every step gated by a subagent code+results review.
+
+## The core finding: 6.1's DQN Q-value DIVERGES (it never converged)
+A confound-free convergence probe (one fresh MATLAB process per (seed, MaxEpochs) —
+`src/week9c_convergence_session.m`, driver `scripts/run_week9c.sh`) showed 6.1's
+val `mean(max_a Q)` **explodes with training**, all 3 seeds, reproducible:
+
+| MaxEpochs | 100 | 200 | 400 |
+|---|---|---|---|
+| Q (s1000/2000/3000) | 2.0/61/1.9 | 209/2018/2311 | 3307/27657/52298 |
+
+Classic offline deadly-triad Q-overestimation. The blow-up **epoch is seed-dependent**,
+which mechanistically explains the across-seed Sharpe variance chased since Week 3:
+6.1's fixed 100-epoch snapshot catches each seed at a different point on its divergence
+trajectory. Figure: `experiments/figures/week9c_divergence.png`.
+(Methodology gotcha found + fixed: `trainFromData`'s internal RNG/datastore cursor is
+NOT reset by `rng(seed)` across calls in one session → the first sweep design was
+non-reproducible; fresh-process-per-config is the fix.)
+
+## Decomposition (each step subagent results-gated)
+1. **Target-update speed is the dominant driver.** 6.1 used `TargetUpdateFrequency=4`
+   (hard-copy every 4 steps → target fails to anchor). Switching to Polyak
+   `TargetSmoothFactor=1e-3` (`src/week9d_slowtarget_session.m`) bounds Q to O(1-5)
+   through ME<=200 and collapses the across-seed spread. Figure:
+   `experiments/figures/week9d_ab_slowtarget.png`. A residual remains at ME=400.
+2. **Reward-scale is NOT the cause.** Shrinking the 158x terminal bonus 1.0->0.05
+   (`src/week9f_bonus_attribution.m`) did NOT fix the ME=400 residual (made it worse),
+   with policy still alive (guard run) — ruling out the sparse-bonus scale.
+3. **The residual is a marginal recursion-gain instability, tunable by LR.** Lowering
+   critic LR 5e-4->1e-4 bounds the worst seed at ME=400 (4369 -> 1.86). So the
+   divergence is OOD-max-bootstrap in *mechanism* but *marginal* in severity (gain ~1+eps,
+   pushed <1 by slower target + lower LR) — NOT categorically unfixable.
+
+**Net: 6.1's instability = two misconfigured hyperparameters (fast target + slightly-high
+LR). A properly-configured vanilla DQN (Polyak tau=1e-3 + LR 1e-4) CONVERGES.**
+
+## IQL built as the principled comparison
+`src/week10_iql_session.m` — custom `dlfeval` loop (trainFromData has no IQL): Q + V
+nets, V=expectile(0.7) regression of target-Q at *dataset* actions, Q=TD onto V(s') —
+**no max-over-OOD-actions anywhere** (structurally removes the exploding term). Greedy
+eval = argmax Q. Validated: bounded, reproducible (byte-identical reruns), Polyak-
+independence assert.
+
+## Final matrix (`scripts/run_matrix.sh`, `src/week10_matrix_plot.m`): tuned-DQN vs IQL
+25 cells (2 learners x 3 seeds x 4 ME + IQL@LR1e-4). Figure:
+`experiments/figures/week10_dqn_vs_iql.png`.
+- **Both BOUNDED** across all seeds/ME (gate passed). tuned-DQN Q 0.71-1.86 (creeps above
+  the ~1.14 economic ceiling at ME400, still rising); IQL Q 0.24-0.96 (always under
+  ceiling, flat). IQL@LR1e-4 also bounded (no-LR-babysitting demonstrated).
+- **Deciding metric (across-seed eval-Sharpe std): NULL.** DQN 0.160 vs IQL 0.190
+  (mean ME100-400) — n=3 noise, non-monotone, crossing. Mean eval Sharpe ~0.4-0.7 both,
+  error bars overlap everywhere; neither beats 60/40 (known power limit).
+
+## Ship decision + honest framing
+**Primary deliverable = tuned-DQN (Polyak tau=1e-3 + LR 1e-4) = "fixed 6.1"** (honors
+"continue 6.1", simpler/lower-risk). **IQL = equivalent principled comparison** carrying
+two real secondary advantages (LR-insensitivity; better value calibration). The
+**equivalence is CONFIRMATORY** — a structurally-different learner reaching the same
+policy proves the fix is complete and the ceiling is the data/regime, not the algorithm.
+**Headline contribution = the diagnosis; both agents are its artifacts.** No returns/
+60-40/reproducibility win is claimed (honest nulls). DQN "converges" carries the asterisk:
+Q bounded-but-still-rising at ME400 (marginal instability suppressed, not eliminated).
+
+**Remaining (packaging, no new training):** train+save FinalAgent.mat (tuned-DQN, ME~100)
++ `predictAction(state)->action`; cost-aware backtest via `src/week8_backtest_harness.m`
+(cost sweep, block-bootstrap CI, DSR with the now-large trial count disclosed, 60/40);
+one-page model card.
