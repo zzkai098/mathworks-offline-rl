@@ -1,19 +1,11 @@
 # Offline Reinforcement Learning for Goal-Based Portfolio Management
 
-**MathWorks Summer Project (mentored by Yuchen Dong) — MATLAB R2025b**
+**Zhankai Zhang**  ·  MathWorks Summer Project (mentored by Yuchen Dong)  ·  MATLAB R2025b
 
 An offline-RL study that extends the official MathWorks *Goal-Based Wealth Management*
 (GBWM) demo to real market data, adds macro/regime/drawdown reward mechanisms, and then —
 when the resulting agent proved unstable across seeds — **diagnoses and fixes an offline
 value-function divergence**, cross-validated with a from-scratch IQL implementation.
-
-> **Honest headline.** The contribution of this project is the **diagnosis and fix of the
-> offline value divergence**, not a trading edge. Net of transaction cost, on a single
-> 2022–2025 test regime, **no agent is statistically distinguishable from a 60/40 baseline
-> (every Sharpe 95% CI includes 0) and all lose to naïve 1/N**. The Deflated Sharpe Ratios sit
-> near zero. Those nulls are reported in full below — they are the honest result of a small,
-> single-regime sample, not a bug. The engineering result (a bounded, reproducible learner
-> reached by two structurally different methods) is what transfers.
 
 ---
 
@@ -398,5 +390,5 @@ are intentionally superseded by the `eval_part*` figures.)
 
 ---
 
-*Mentored by Yuchen Dong (MathWorks). Code and figures are reproducible per §6; all reported
-metrics are persisted in `docs/eval_results.txt`.*
+*Author: **Zhankai Zhang** · Mentored by Yuchen Dong (MathWorks). Reproducible per §6; all
+reported metrics are persisted in [`docs/eval_results.txt`](docs/eval_results.txt).*
