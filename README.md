@@ -2,6 +2,10 @@
 
 **Zhankai Zhang**  ·  MathWorks Summer Project (mentored by Yuchen Dong)  ·  MATLAB R2025b
 
+![MATLAB R2025b](https://img.shields.io/badge/MATLAB-R2025b-orange)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue)
+![Offline RL](https://img.shields.io/badge/Offline%20RL-DQN%20%7C%20IQL-8A2BE2)
+
 An offline-RL study that extends the official MathWorks *Goal-Based Wealth Management*
 (GBWM) demo to real market data, adds macro/regime/drawdown reward mechanisms, and then —
 when the resulting agent proved unstable across seeds — **diagnoses and fixes an offline
@@ -159,6 +163,13 @@ out-of-distribution `max` (Sutton & Barto 2018; van Hasselt et al. 2018; overest
 van Hasselt et al. 2016). The blow-up epoch is *seed-dependent*, which is exactly why a fixed
 100-epoch snapshot caught each seed at a different point on its divergence trajectory.
 
+Concretely, the target the DQN critic regresses onto is
+
+$$y=r+\gamma\,\underbrace{\max_{a'}Q_{\bar\theta}(s',a')}_{\text{evaluated at out-of-distribution }a'}$$
+
+and offline those $a'$ never appear in the dataset, so the $\max$ latches onto over-estimated
+Q-values that feed back through the recursion — the blow-up above.
+
 **Decomposition (each step gated by an independent review):**
 
 ```mermaid
@@ -186,7 +197,12 @@ flowchart TD
 `trainFromData` has no IQL). Both learners end **bounded and reproducible**; a structurally
 different method reaching an **equivalent policy** confirms the fix is complete and the ceiling
 is the data/regime, not the algorithm. (See also the offline-RL pessimism literature: Levine et
-al. 2020; Kumar et al. 2020, CQL.)
+al. 2020; Kumar et al. 2020, CQL.) It replaces that $\max$ with an **in-sample expectile** of
+$V$ (level $\tau=0.7$) and a plain TD backup — **no `max` over OOD actions anywhere**:
+
+$$L_V=\mathbb{E}_{(s,a)\sim\mathcal{D}}\big[\,|\tau-\mathbb{1}(u<0)|\;u^2\,\big],\quad u=Q_{\bar\theta}(s,a)-V_\psi(s)$$
+
+$$L_Q=\mathbb{E}_{(s,a,s')\sim\mathcal{D}}\big[\,\big(r+\gamma\,V_\psi(s')-Q_\theta(s,a)\big)^2\,\big]$$
 
 ![tuned-DQN vs IQL — both bounded](experiments/figures/week10_dqn_vs_iql.png)
 
@@ -201,7 +217,14 @@ same place by construction.
 Cost-aware backtest on the 2022–2025 test path, **net 10 bp**, with a **moving-block bootstrap**
 95% Sharpe CI (block = 30-day horizon; Künsch 1989) and the **Deflated Sharpe Ratio** (DSR;
 Bailey & López de Prado 2014, trial count set to the honest ~40 configs tried across the
-project). Chained Sharpe (no per-window reset) is the primary, honest metric; total return is
+project):
+
+$$\mathrm{DSR}=\Phi\!\left(\frac{(\widehat{SR}-SR_0)\sqrt{T-1}}{\sqrt{1-\gamma_3\widehat{SR}+\tfrac{\gamma_4-1}{4}\widehat{SR}^2}}\right)$$
+
+where $\gamma_3,\gamma_4$ are the return skew/kurtosis and $SR_0$ is the Sharpe one would
+expect as the maximum across the $N$ trials under the null — so a high nominal Sharpe is
+discounted for both non-normality and multiple testing. Chained Sharpe (no per-window reset)
+is the primary, honest metric; total return is
 secondary because it hides path risk.
 
 **Baselines.** *behavior-random* (the uniform-random frontier policy that generated the offline
@@ -324,6 +347,15 @@ matlab -batch "addpath('src'); addpath('src/utils'); eval_compare"
 bash scripts/check_final_agent.sh
 ```
 
+**Using the shipped agent** (clean session):
+
+```matlab
+S = load('experiments/models/FinalAgent.mat');          % struct FA — tuned-DQN, seed 1000
+% inputs: current wealth, step t in 1..30, raw macro [DGS10 T10Y2Y VIXCLS DFF]
+[actionIdx, weights] = predictAction(S.FA, 101000, 5, [4.2 -0.5 18 5.3]);
+% actionIdx -> one of the 15 frontier portfolios; weights -> 15-asset allocation (sums to 1)
+```
+
 The numbers in this README are persisted verbatim in [`docs/eval_results.txt`](docs/eval_results.txt).
 
 **Repository layout**
@@ -400,6 +432,22 @@ are intentionally superseded by the `eval_part*` figures.)
   optimization with loss aversion and overconfidence. *Scientific Reports*.
 - Ni, X., Liu, G., & Lai, L. (2024). Risk-Sensitive Reward-Free Reinforcement Learning with CVaR.
   *ICML 2024*.
+
+---
+
+## License & citation
+
+Code and figures are released under the **MIT License** (see [`LICENSE`](LICENSE)). To reference this work:
+
+```bibtex
+@misc{zhang2026gbwmofflinerl,
+  author = {Zhang, Zhankai},
+  title  = {Offline Reinforcement Learning for Goal-Based Portfolio Management},
+  year   = {2026},
+  note   = {MathWorks Summer Project (mentored by Yuchen Dong)},
+  howpublished = {\url{https://github.com/zzkai098/mathworks-offline-rl}}
+}
+```
 
 ---
 
