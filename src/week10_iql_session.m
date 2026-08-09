@@ -210,6 +210,24 @@ row = [seed, ME, EXPECTILE, TSF, LRATE, qG, qE, qL, vMean, margin, stateStd, eff
 writematrix(row, resultsCsv, "WriteMode", "append");
 fprintf("  appended -> %s\n", resultsCsv);
 
+%% Save IQL bundle for packaging/backtest (only when MODELPATH is set)
+if exist('MODELPATH','var')
+    FI = struct();
+    FI.qNet = qNet;                 % greedy policy = argmax_a forward(qNet, obs)
+    FI.W_frontier = W_frontier;
+    FI.assetNames = assetNames;
+    FI.macroMean = macroMean;  FI.macroStd = macroStd;
+    FI.goalWealth = goalWealth;  FI.wealthClip = 5;
+    FI.horizonPeriods = horizonPeriods;  FI.numActions = numActions;
+    FI.meta = struct('learner','IQL (expectile 0.7, no OOD-max) — self-stabilizing', ...
+        'seed',seed,'maxEpochs',ME,'expectile',EXPECTILE,'tau',TSF,'lr',LRATE, ...
+        'state','[normWealth; timeFrac; DGS10_z; T10Y2Y_z; VIXCLS_z; DFF_z]', ...
+        'note','greedy argmax forward(qNet); macro z-scored with FI.macroMean/Std; wealth clipped at 5x goal');
+    md = fileparts(MODELPATH);  if ~isempty(md) && ~isfolder(md); mkdir(md); end
+    save(MODELPATH, "FI", "-v7.3");
+    fprintf("  saved IQL bundle -> %s\n", MODELPATH);
+end
+
 
 %% ===== local functions =====
 function [lossV, grad] = vGrad(vNet, qTgt, s, aoh, expectile)

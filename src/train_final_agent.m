@@ -16,18 +16,19 @@
 % pass SEED and MODELPATH (e.g. experiments/models/dqn_seed_2000.mat).
 if ~exist('SEED','var');  SEED = 1000;   end
 if ~exist('ME','var');    ME = 100;      end
+if ~exist('NUMACTIONS','var'); NUMACTIONS = 15; end
 TSF = 1e-3;  LRATE = 1e-4;
 
 %% Fixed Parameters (identical to 6.1 / week9d)
 initialWealth = 100000;  goalWealth = 102000;  contribution = 0;  wealthClip = 5;
-trainingRange = 3020;    horizonPeriods = 30;  numEpisodes = 200;  numActions = 15;
+trainingRange = 3020;    horizonPeriods = 30;  numEpisodes = 200;  numActions = NUMACTIONS;
 hiddenUnits = 32;        miniBatchSize = 256;  discountFactor = 0.995;  stepsPerEpoch = 400;
 BETA_HIGH = 8.0;  BETA_LOW = 2.0;  DD_THR = 0.03;
 VIX_THR_Z = 1.5;  SLOPE_THR_Z = -1.5;  COL_T10Y2Y = 2;  COL_VIX = 3;
 
 modelDir = fullfile("experiments","models");
 if ~isfolder(modelDir); mkdir(modelDir); end
-logsRoot = fullfile("experiments","logs","final_agent", sprintf("seed_%d", SEED));
+logsRoot = fullfile("experiments","logs","final_agent", sprintf("seed_%d_a%d", SEED, NUMACTIONS));
 
 %% Train prices + frontier
 pricesTT = readtable("data/prices_train_extended.csv");
@@ -121,7 +122,7 @@ FA.wealthClip   = wealthClip;
 FA.horizonPeriods = horizonPeriods;
 FA.numActions   = numActions;
 FA.meta = struct('learner','tuned-DQN (Polyak tau=1e-3, LR=1e-4) = fixed 6.1', ...
-    'seed',SEED,'maxEpochs',ME,'trainWindow','2010-2021 extended (trainingRange=3020)', ...
+    'seed',SEED,'maxEpochs',ME,'numActions',NUMACTIONS,'trainWindow','2010-2021 extended (trainingRange=3020)', ...
     'state','[normWealth; timeFrac; DGS10_z; T10Y2Y_z; VIXCLS_z; DFF_z]', ...
     'reward','log-ret - regime-gated drawdown penalty (beta 8/2) + terminal bonus 1.0', ...
     'expectedValQ','~1.0-1.2 (bounded, under ~1.14 economic ceiling)', ...

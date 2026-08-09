@@ -67,6 +67,29 @@ for si = 1:nSeeds
     end
     dqnGross{si} = gW;  dqnTurn{si} = tW;
 end
+
+% IQL (optional co-shipped agent — replayed only if its seed bundles exist)
+haveIQL = isfile("experiments/models/iql_seed_1000.mat");
+iqlGross = cell(nSeeds,1);  iqlTurn = cell(nSeeds,1);
+if haveIQL
+    for si = 1:nSeeds
+        f = sprintf("experiments/models/iql_seed_%d.mat", seeds(si));
+        assert(isfile(f), "missing %s — run scripts/train_iql_seeds.sh", f);
+        L = load(f, "FI");
+        assert(contains(L.FI.meta.learner, "IQL"), "wrong-config bundle in %s", f);
+        qNet = L.FI.qNet;
+        gW = nan(numEvalEpisodes, horizonPeriods);  tW = gW;
+        for ep = 1:numEvalEpisodes
+            s0 = (ep-1)*evalStepSize + 1;
+            if s0 + horizonPeriods - 1 > size(R_full,1); break; end
+            [g,tu] = runWindow(qNet, 'iql', W_frontier, [], s0, horizonPeriods, ...
+                               R_full, M_test_z, initialWealth, goalWealth);
+            gW(ep,:) = g';  tW(ep,:) = tu';
+        end
+        iqlGross{si} = gW;  iqlTurn{si} = tW;
+    end
+end
+
 bG = nan(numEvalEpisodes, horizonPeriods);  bT = bG;
 for ep = 1:numEvalEpisodes
     s0 = (ep-1)*evalStepSize + 1;
@@ -78,7 +101,8 @@ end
 fprintf("Replayed 5 DQN seeds + 60/40 across %d windows.\n\n", numEvalEpisodes);
 
 %% Report per cost
-fprintf("===== Week 10 cost-aware backtest: shipped tuned-DQN (5 seeds) vs 60/40 =====\n");
+if haveIQL; learners = "tuned-DQN + IQL (5 seeds each)"; else; learners = "tuned-DQN (5 seeds)"; end
+fprintf("===== Week 10 cost-aware backtest: %s vs 60/40 =====\n", learners);
 fprintf("Sharpe annualized; MaxDD/Terminal across windows; CI=95%% block bootstrap; DSR trials=%d\n\n", dsrNumTrials);
 
 for ci = 1:nCost
@@ -104,6 +128,23 @@ for ci = 1:nCost
     fprintf("%-9s | %4.1f | %6.2f | %5.2f | %5.1f%% | %5.1f%% | %7.2f | %7.0f | %8.0f | [%5.2f,%5.2f] | %.3f\n", ...
         "tuned-DQN", mean(perSeedSucc), mean(perSeedSharpe), std(perSeedSharpe), ...
         100*mean(allDD), 100*prctile(allDD,90), mean(perSeedMin), prctile(allTermW,10), mean(allTermW), lo, hi, dsr);
+
+    % IQL: same aggregation (CI/DSR on shipped seed 1000)
+    if haveIQL
+        pS = nan(nSeeds,1);  pSucc = nan(nSeeds,1);  pMin = nan(nSeeds,1);
+        aDD=[]; aTW=[]; shipR=[];
+        for si = 1:nSeeds
+            [shW, ddW, twW, scW, ~, netR] = perWindow(iqlGross{si}, iqlTurn{si}, c, initialWealth, goalWealth, annualizeFactor);
+            pS(si) = mean(shW,'omitnan');  pSucc(si) = sum(scW,'omitnan');  pMin(si) = min(shW);
+            aDD=[aDD; ddW]; aTW=[aTW; twW]; %#ok<AGROW>
+            if seeds(si)==1000; shipR = netR; end
+        end
+        [lo2,hi2] = blockBootstrapSharpeCI(shipR, blockLen, nBoot, annualizeFactor);
+        dsr2 = deflatedSharpe(shipR, dsrNumTrials, dsrTrialSharpeVar);
+        fprintf("%-9s | %4.1f | %6.2f | %5.2f | %5.1f%% | %5.1f%% | %7.2f | %7.0f | %8.0f | [%5.2f,%5.2f] | %.3f\n", ...
+            "IQL", mean(pSucc), mean(pS), std(pS), ...
+            100*mean(aDD), 100*prctile(aDD,90), mean(pMin), prctile(aTW,10), mean(aTW), lo2, hi2, dsr2);
+    end
 
     % 60/40: single
     [shW, ddW, twW, scW, ~, netR] = perWindow(bG, bT, c, initialWealth, goalWealth, annualizeFactor);
@@ -134,10 +175,14 @@ function [grossRet, turnover] = runWindow(agent, agentType, basis, staticW, ...
         dayIdx = startEval + t - 1;
         if isempty(agent)
             w = staticW(:);
-        else
+        elseif strcmp(agentType, 'iql')
+            obs = [normalizeWealth(wealth); timeFrac(t); M_test_z(dayIdx,:)'];
+            q = extractdata(forward(agent, dlarray(obs, 'CB')));   % agent = qNet
+            [~, a] = max(q);  w = basis(:, a);  w = w(:);
+        else   % dqn
             obs = { [normalizeWealth(wealth); timeFrac(t); M_test_z(dayIdx,:)'] };
             aOut = agent.getAction(obs);
-            w = basis(:, aOut{1});  w = w(:);   % dqn
+            w = basis(:, aOut{1});  w = w(:);
         end
         rAsset = R_full(dayIdx,:)';  rG = R_full(dayIdx,:) * w;
         grossRet(t) = rG;
