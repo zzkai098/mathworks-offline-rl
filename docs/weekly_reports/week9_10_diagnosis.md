@@ -90,9 +90,37 @@ comparison (with two real secondary edges: no-LR-babysitting, better-calibrated 
 
 - `experiments/models/FinalAgent.mat` + `src/predictAction.m` — loads and runs in a
   clean session (verified via `scripts/check_final_agent.sh`).
-- **Cost-aware backtest** (`src/week10_backtest.m`): shipped tuned-DQN vs 60/40, turnover
-  cost swept 0/5/10/20 bp, block-bootstrap 95% Sharpe CI + Deflated Sharpe (honest large
-  trial count). *[table to be inserted once the 5-seed backtest completes]*
+- **Cost-aware backtest** (`src/week10_backtest.m`): shipped tuned-DQN (5 seeds) vs a
+  daily 60/40 constant-mix, drift-aware turnover cost, block-bootstrap 95% Sharpe CI +
+  Deflated Sharpe. CI/DSR are on the **shipped single agent (seed 1000)**, not pooled
+  across seeds (pooling the same market path would fabricate independence). DSR trial
+  count = 40 (the dozens of configs tried across week4–10; `1/T` is a lower bound on
+  cross-trial dispersion, so the true DSR is if anything lower).
+
+  **Full metric set @ 10 bp** (Sharpe annualized; MaxDD/Terminal across the 30 windows):
+
+  | metric | tuned-DQN | 60/40 |
+  |---|---|---|
+  | Success rate (/30) | 13.4 | 12.0 |
+  | Mean Sharpe | 0.42 | **0.49** |
+  | Across-seed std | 0.23 | n/a (static) |
+  | Mean MaxDD | 7.8% | **4.0%** |
+  | MaxDD P90 | 16.2% | **8.7%** |
+  | Worst Sharpe | −6.12 | **−5.56** |
+  | Terminal P10 | 90,574 | **95,302** |
+  | Mean Terminal | 100,422 | 100,273 |
+  | 95% CI (Sharpe) | [−0.55, 1.49] | [−0.87, 1.30] |
+  | Deflated Sharpe | 0.07 | 0.03 |
+
+  **Net Sharpe vs cost:** DQN 0.54 / 0.48 / 0.42 / 0.29 at 0/5/10/20 bp; 60/40 0.51 /
+  0.50 / 0.49 / 0.47. DQN's nominal edge at 0 bp evaporates by ~10 bp (higher turnover).
+
+  **Honest read:** every Sharpe CI overlaps and includes 0 → tuned-DQN is **not
+  statistically distinguishable from 60/40** net of cost, and 60/40 is in fact **better
+  on tail risk** (half the MaxDD P90, higher Terminal P10) at lower turnover. Both DSRs
+  sit far below any significance floor. This is the ~600-day single-regime power limit,
+  not an algorithm failure — and it is exactly why **the contribution is the diagnosis,
+  not a returns edge.** *(IQL row to be added once its cost-aware backtest completes.)*
 
 **Honest null (stated up front):** net of cost, the agent is **not statistically
 distinguishable from 60/40** — the ~600-day single-regime power limit, not an algorithm
