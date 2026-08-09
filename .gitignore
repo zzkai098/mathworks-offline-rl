@@ -37,3 +37,4 @@ __pycache__/
 data/prices_*.csv
 data/macro_*.csv
 data/dataset_*.csv
+.Rhistory
