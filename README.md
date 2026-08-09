@@ -110,6 +110,17 @@ motivated by the literature **before** it was tried:
    not teach *which* action to prefer in a regime. The drawdown penalty is action-dependent by
    construction, which is why it worked where λ-loss did not.
 
+**Formally**, with a per-day stress flag $s_t$, running drawdown $\mathrm{DD}_t$, goal $G$, and
+terminal bonus $b$, the shipped **6.1** reward is
+
+$$s_t=\mathbb{1}\!\left[\mathrm{VIX}_z(t)>1.5\ \lor\ \mathrm{T10Y2Y}_z(t)<-1.5\right],\qquad \beta(s_t)=\begin{cases}8 & s_t=1\\ 2 & s_t=0\end{cases}$$
+
+$$r_t=\log\frac{W_{t+1}}{W_t}\;-\;\beta(s_t)\,\max\!\left(0,\ \mathrm{DD}_t-0.03\right)\;+\;b\,\mathbb{1}[t=T]\,\mathbb{1}[W_T\ge G],\qquad \mathrm{DD}_t=\frac{\max_{k\le t}W_k-W_t}{\max_{k\le t}W_k}$$
+
+The **abandoned** v2 variant amplified only stress-day losses — action-independent, hence it saturated:
+
+$$r_t^{\text{v2}}=\begin{cases}\lambda\,\log(W_{t+1}/W_t) & s_t=1\ \text{and}\ \log(W_{t+1}/W_t)<0\\ \log(W_{t+1}/W_t) & \text{otherwise}\end{cases}\qquad(\lambda\approx2.5)$$
+
 **Part A — the 6-D DQN evolution.** Each stage's 5 saved agents are re-loaded and replayed
 greedily through the test windows (each with its own train-window frontier + normalizer):
 
@@ -226,7 +237,9 @@ is the unbiased ensemble below.
 | tuned-DQN (N=10) | 0.12 | [−0.68, 1.37] | 0.02 | +12.4% | 15.4% | 91931 |
 | IQL (N=10) | −0.31 | [−0.99, 0.90] | 0.00 | −24.8% | 16.0% | 92132 |
 | **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | 8.7% | 95302 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 |
+| MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 |
+| behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 |
 
 ![Part C2 ensemble equity](experiments/figures/eval_partC2_ensemble_equity.png)
 
