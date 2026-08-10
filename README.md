@@ -140,8 +140,7 @@ greedily through the test windows (each with its own train-window frontier + nor
 > **Protocol note (read before comparing to Part C).** Part A numbers are **gross (cost = 0),
 > per-window Sharpe** (each 30-day window resets wealth — this *flatters* Sharpe), averaged over
 > 5 seeds, and stop at **6.1 (pre-fix)**. Part C uses **net-of-cost, chained** Sharpe on the
-> *shipped, fixed* agent. The two are different measurements — **do not** read 6.1's 0.66 here
-> against the tuned-DQN's 0.38 there and conclude the fix "hurt returns" — you cannot conclude that from these numbers.
+> *shipped, fixed* agent. 
 
 6.1 has the best mean Sharpe and the tightest across-seed spread — yet across-seed variance had
 haunted every version since Week 3. **Why?** That question is the real result.
