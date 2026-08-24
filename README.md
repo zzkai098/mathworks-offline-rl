@@ -13,37 +13,138 @@ value-function divergence**, cross-validated with a from-scratch IQL implementat
 
 ---
 
-## Results at a glance
+## Results
 
-Cost-aware backtest on the **2022–2025** hold-out, **net 10 bp**, chained across 30 windows
-into a single wealth path. Sharpe is the primary metric; CIs are moving-block bootstrap.
+All numbers below are on the **2022–2025 hold-out**, **net 10 bp** of drift-aware turnover
+cost, over 30 non-overlapping 30-day windows. Sharpe is the primary metric; 95% CIs are
+moving-block bootstrap (block = the 30-day horizon).
 
-| strategy | Chained Sharpe | 95% CI | Total ret | MaxDD P90 | Term P10 |
-|---|---|---|---|---|---|
-| tuned-DQN (seed 1000) | 0.38 | [−0.56, 1.61] | **+55.5%** | 18.6% | 91567 |
-| tuned-DQN (N=10 ensemble) | 0.12 | [−0.68, 1.37] | +12.4% | 15.4% | 91931 |
-| IQL (seed 1000) | 0.19 | [−0.66, 1.42] | +17.5% | 13.3% | 90931 |
-| **1/N equal-weight** | **0.62** | [−0.30, 1.71] | +37.4% | **10.3%** | **95855** |
-| 60/40 | 0.13 | [−0.93, 1.23] | +5.9% | 8.7% | 95302 |
-| behavior-random (the logging policy) | −0.64 | [−1.56, 0.56] | −45.9% | 17.0% | 86345 |
+> **Two column scopes — read them separately.** *Chained Sharpe* and *Total ret* are computed
+> on the **single chained wealth path** (the 30 windows joined end to end, so losses compound).
+> *MaxDD P90*, *Term P10* and *Succ /30* are **per-window** statistics — wealth resets to
+> 100,000 at the start of each 30-day window (`src/utils/windowMetrics.m:31-48`). So they
+> describe *typical 30-day* risk, **not** the drawdown of the chained path: "+55.5% total
+> return" and "18.6% MaxDD P90" are **not two properties of the same curve**. *Succ /30* counts
+> windows ending at or above the goal, which is `goalWealth = 102000` against a 100,000 start —
+> a **+2% hurdle over 30 days**.
 
-![Ensemble equity curves, 2022–2025 net 10 bp](experiments/figures/eval_partC2_ensemble_equity.png)
+### Performance vs baselines
 
-**How to read this table.** The eye-catching **+55.5%** is a *single seed* on a *single
-realized path* — its Sharpe (0.38) is still **below naïve 1/N (0.62)**, i.e. the extra return
-was bought with extra risk. The unbiased N=10 ensemble ties 60/40. And **every confidence
-interval includes zero**: on ~900 autocorrelated test days no strategy here is statistically
-separable from any other, so **this project makes no claim to beat a passive baseline**.
+Baselines: **behavior-random** (the uniform-random frontier policy that generated the offline
+data — beating it is the canonical offline-RL success test), **1/N** equal-weight, **MVO**
+(max-Sharpe tangency fit on train, not re-estimated on test), and **60/40** daily constant mix.
 
-> **The deliverable is the diagnosis, not the returns.** The result worth reading is
-> §[3](#3-the-divergence-investigation-part-b--the-headline): the agent's "seed noise" turned
-> out to be **Q-value divergence**, which is traced to two hyperparameters, fixed, and then
-> independently confirmed by a from-scratch IQL. The performance nulls above are reported
-> honestly as a *sample-size* limit, not hidden.
+**C1 — the single shipped agent (seed 1000)**
 
----
+| strategy | Chained Sharpe | 95% CI | DSR | Total ret | MaxDD P90 | Term P10 | Succ /30 |
+|---|---|---|---|---|---|---|---|
+| tuned-DQN (seed 1000) | 0.38 | [−0.56, 1.61] | 0.07 | **+55.5%** | 18.6% | 91567 | 15 |
+| IQL (seed 1000) | 0.19 | [−0.66, 1.42] | 0.03 | +17.5% | 13.3% | 90931 | 12 |
+| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** | 19 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 | 12 |
+| MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 | 8 |
+| behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 | 11 |
 
-## How this project was done
+![Part C1 single-seed equity](experiments/figures/eval_partC1_single_equity.png)
+
+**C2 — N = 10 seed ensemble (average Q, then argmax)**
+
+| strategy | Chained Sharpe | 95% CI | DSR | Total ret | MaxDD P90 | Term P10 |
+|---|---|---|---|---|---|---|
+| tuned-DQN (N=10) | 0.12 | [−0.68, 1.37] | 0.02 | +12.4% | 15.4% | 91931 |
+| IQL (N=10) | −0.31 | [−0.99, 0.90] | 0.00 | −24.8% | 16.0% | 92132 |
+| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 |
+| MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 |
+| behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 |
+
+![Part C2 ensemble equity](experiments/figures/eval_partC2_ensemble_equity.png)
+
+**How to read these tables**
+
+- **The +55.5% is one seed, not an edge.** On the like-for-like metric — chained Sharpe, which
+  prices return *and* risk on the same path — seed 1000 scores 0.38, *below* naïve 1/N's 0.62.
+  It is less risk-efficient, not more. (Its per-window MaxDD P90 is also the worst in the
+  table, 18.6% vs 1/N's 10.3% — a separate scope, but pointing the same way.) **Seed 1000 is
+  the default first seed used a-priori throughout the project, and it also happens to be the
+  strongest single path on this test set**, so it must not carry the argument.
+- **The N=10 ensemble is the load-bearing number.** It removes single-seed luck: tuned-DQN
+  ties 60/40 (0.12 vs 0.13) and still loses to 1/N. Its total return is also **sensitive to N**
+  — an earlier sweep gave materially different, even negative, totals at N=5 and N=20 — so
+  "+12.4%" is one pick, not a robust figure.
+- **Every confidence interval includes zero.** On ~900 autocorrelated test days in a single
+  regime, no strategy here is statistically separable from any other.
+- **Nothing survives the multiple-testing haircut.** The highest DSR in either table is 0.15
+  (1/N); every agent is at 0.07 or below. **This project makes no claim to beat a passive
+  baseline** — see [Limitations](docs/REPORT.md#5-honest-limitations--conclusion).
+
+> **Two caveats on both tables.** (1) *Cost:* these are a single **10 bp** operating point;
+> the Week 8 cost sweep (0/5/10/20 bp) had already shown a nominal DQN edge at 0 bp
+> evaporating by ~10 bp while 60/40 stays nearly cost-flat at a fraction of the turnover.
+> (2) *Chaining:* the 29 window-boundary rebalances are **uncharged**, which favours the
+> portfolio-switching agents over the static baselines — so the agents' true net numbers are,
+> if anything, slightly worse than shown.
+
+### The core finding — Q-value divergence, and the fix
+
+The across-seed instability that had haunted every version since Week 3 was **not seed luck**.
+A confound-free probe (one fresh MATLAB process per configuration) shows the validation
+$\mathbb{E}[\max_a Q]$ **explodes with training**, reproducibly, on every seed:
+
+| MaxEpochs | 100 | 200 | 400 |
+|---|---|---|---|
+| val mean max Q (seeds 1000/2000/3000) | 2.0 / 61 / 1.9 | 209 / 2018 / 2311 | 3307 / 27657 / 52298 |
+
+![6.1 Q-value diverges](experiments/figures/week9c_divergence.png)
+
+- **The blow-up epoch is seed-dependent** — which is precisely why a fixed 100-epoch snapshot
+  caught each seed at a different point on its divergence trajectory and looked like "seed
+  noise". This is the textbook **deadly triad** (function approximation + bootstrapping +
+  off-policy `max` over out-of-distribution actions).
+- **Two misconfigured hyperparameters, not a broken algorithm.** Switching the target network
+  from a hard copy every 4 steps to **Polyak averaging (τ = 1e-3)** and lowering the critic
+  **LR 5e-4 → 1e-4** bounds Q to O(1) and collapses the across-seed spread.
+- **Reward scale was ruled out** — shrinking the terminal bonus 1.0 → 0.05 did not remove the
+  residual, so the sparse bonus is not the cause.
+
+![Polyak fix bounds Q](experiments/figures/week9d_ab_slowtarget.png)
+
+- **"Converges" carries one asterisk.** Both learners end bounded, but not identically:
+  **IQL stays under the ~1.14 economic ceiling and flat across all epochs (0.24–0.96), while
+  tuned-DQN reaches 1.86 by 400 epochs and is still mildly rising.** The marginal instability
+  is suppressed, not eliminated — the ceiling is drawn on the figure below, and the DQN trace
+  crosses it. That residual is exactly why the IQL cross-check is worth reporting rather than
+  optional.
+- **IQL confirms the fix structurally.** Implicit Q-Learning bootstraps from an in-sample
+  expectile of $V$, so the exploding `max` over OOD actions never appears by construction
+  (built from scratch, custom `dlfeval` loop). On the deciding diagnostic — across-seed
+  eval-Sharpe over the epoch sweep — the two learners are **statistically indistinguishable**
+  (n = 3, crossing, overlapping error bars). A structurally different learner reaching the
+  same place on that metric is the confirmation that the fix is complete and the remaining
+  ceiling is the data, not the algorithm. On the cost-aware chained evaluation above the two
+  do diverge materially (0.12 vs −0.31) — a different protocol on a single realized path,
+  which the confidence intervals already say cannot be resolved.
+
+![tuned-DQN vs IQL — both bounded](experiments/figures/week10_dqn_vs_iql.png)
+
+### What the agent actually learned
+
+The policy is a deterministic `argmax_a Q(state)`, so it can be rendered directly as a map
+over (wealth × time) at a fixed macro regime — each cell is the portfolio the N=10 ensemble
+would hold there (blue = defensive, yellow = aggressive):
+
+![Action policy map: NORMAL vs STRESS](experiments/figures/final_agent_action_policymap.png)
+
+- **Wealth-conditioning is correct.** Above the goal line the agent turns defensive; when
+  underfunded and late it turns aggressive — the *gamble-for-resurrection* behaviour GBWM
+  theory predicts (Browne 1999; Das–Ostrov).
+- **Regime-conditioning runs the wrong way**, and this is a **data limitation, not a smart
+  bet.** The STRESS panel shifts aggressive (grid-mean action 4.8 → 9.3) because every stress
+  episode in the training period — including COVID 2020 — was a V-shaped panic followed by
+  recovery, so the reward taught "stress = buy the dip", a reflex that misfires in 2022's
+  persistent grind.
+
+## Workflow
 
 ```mermaid
 flowchart TD
@@ -71,7 +172,7 @@ flowchart TD
 
   D --> A1
   A4 -->|"observed: large<br/>across-seed variance"| B1
-  B5 -->|"equivalent policy ⇒<br/>fix is complete"| C1
+  B5 -->|"null on the deciding metric ⇒<br/>fix is complete"| C1
   C3 --> R["<b>Honest result</b><br/>diagnosis is the contribution;<br/>returns are a statistical null"]
 ```
 
@@ -101,7 +202,7 @@ pip install -r scripts/requirements.txt      # yfinance · pandas · fredapi · 
 export FRED_API_KEY=<your key>               # free: https://fred.stlouisfed.org/docs/api/api_key.html
 ```
 
-**Quick start** (full recipe in §[6](#6-reproduction)):
+**Quick start** (full recipe in [§6 Reproduction](docs/REPORT.md#6-reproduction)):
 
 ```bash
 python scripts/fetch_data.py && python scripts/merge_train_val.py   # 1. get data
@@ -111,472 +212,22 @@ bash scripts/check_final_agent.sh                                   # 3. cold-lo
 
 ---
 
-## Table of contents
-1. [Background & concepts](#1-background--concepts)
-2. [Data & experimental setup](#15-data--experimental-setup)
-3. [Reward engineering — and the model evolution (Part A)](#2-reward-engineering--and-the-model-evolution-part-a)
-4. [The divergence investigation (Part B) — the headline](#3-the-divergence-investigation-part-b--the-headline)
-5. [Evaluation (Part C): single-seed, then ensemble](#4-evaluation-part-c-single-seed-then-ensemble)
-6. [Honest limitations & conclusion](#5-honest-limitations--conclusion)
-7. [Reproduction](#6-reproduction)
-8. [References](#7-references)
+## Full report
 
----
+The complete write-up — problem framing, data, the reward derivations, the full divergence
+investigation with its mechanism and attribution, evaluation methodology, limitations, and
+references — is in **[`docs/REPORT.md`](docs/REPORT.md)**.
 
-## 1. Background & concepts
-
-**Goal-Based Wealth Management (GBWM)** reframes "risk" as *the probability of not reaching a
-goal* rather than return volatility. The objective is
-
-```math
-\max_{A(0),\dots,A(T-1)}\; P\big(W(T) \ge G\big)
-```
-
-where $W(T)$ is terminal wealth, $G$ the goal, and $A(t)$ the portfolio chosen each period.
-This produces a famous paradox: when a portfolio is **underfunded**, *increasing* volatility
-can be optimal because it raises the chance of reaching $G$ — the opposite of conventional
-risk aversion (Browne 1999; Das, Ostrov et al. 2018). This project builds directly on the
-MathWorks GBWM-RL example (see References) and its problem framing.
-
-**As a reinforcement-learning problem** (following the demo):
-
-| Component | Definition |
+| section | what it covers |
 |---|---|
-| **State** | $[\tilde{W}_t,\ t/T]$ (normalized wealth, time) in the demo; extended here to 6-D by appending 4 z-scored macro factors |
-| **Action** | one of **15 discrete efficient-frontier portfolios** (each a full weight vector, not a single asset) |
-| **Reward** | sparse terminal bonus for reaching the goal, plus the shaping terms introduced below |
-| **Agent** | Deep Q-Network (discrete actions, continuous state); here also IQL |
-
-The **efficient frontier** (Markowitz 1952) is discretized into 15 portfolios once, from the
-training window's return moments. Discretization buys (i) tractability — no continuous action
-optimization during training, (ii) automatic constraint satisfaction (fully invested, long-
-only, ≤50% per asset), and (iii) a time-homogeneous action set. **Each action is a diversified
-mix**, sliding from defensive (bond/gold-heavy) to aggressive (equity-heavy):
-
-![Asset composition of the 15 frontier actions](experiments/figures/action_weight_composition.png)
-
-*Action 1 ≈ TLT 45% + GLD + defensive equity; action 15 ≈ 100% NVDA. Only the extreme
-aggressive corner degenerates to a single asset — every other action is a portfolio.*
-
-**Data pipeline (offline RL).** Training never interacts with a live environment; it learns from
-a fixed dataset of logged transitions generated by a random *behavior policy*. (For the
-project-level methodology, see [How this project was done](#how-this-project-was-done) above.)
-
-```mermaid
-flowchart LR
-  A["FRED macro + 15 asset prices<br/>(train 2010-2021)"] --> B["log-returns +<br/>train-only z-scored macro"]
-  B --> C["sliding-window offline episodes<br/>behavior policy = random frontier action"]
-  C --> D{"offline learner"}
-  D -->|"trainFromData"| E["tuned-DQN<br/>Polyak τ=1e-3, LR 1e-4"]
-  D -->|"custom dlfeval loop"| F["IQL<br/>expectile V, no OOD max"]
-  E --> G["greedy argmax-Q policy"]
-  F --> G
-  G --> H["cost-aware chained backtest<br/>(test 2022-2025, net 10 bp)"]
-```
-
----
-
-## 1.5 Data & experimental setup
-
-| Item | Value |
-|---|---|
-| **Assets (15)** | AAPL, MSFT, NVDA, JPM, BAC, V, JNJ, UNH, XOM, CVX, PG, KO, CAT (13 equities) + **TLT** (long bond) + **GLD** (gold) |
-| **Macro factors (4, FRED)** | DGS10 (10-yr yield), T10Y2Y (yield-curve slope), VIXCLS (VIX), DFF (fed funds) |
-| **Train (shipped agents, 6.1)** | 2010-01-04 → 2021-12-31 (`prices_train_extended.csv`, includes the COVID crash) |
-| **Train (early evolution v3/v5)** | 2010-01-04 → 2019-12-31 (`prices_train.csv`) |
-| **Test (all reported results)** | 2022-01-03 → 2025-12-31 (~1000 available days; 900 evaluated as 30×30-day windows) |
-| **Normalization** | macro z-scored on **train only**, applied unchanged to test (no look-ahead) |
-| **Rebalancing** | daily; turnover is drift-aware (held weights drift with realized returns before the next trade) |
-| **Eval protocol** | 30 non-overlapping 30-day windows chained end-to-end into one wealth path (the agent's *observed* wealth/time resets to the window start each 30 days; backtest wealth compounds across windows) |
-
-The 2022–2025 test window is deliberately **out of the training distribution** (2022 stock-bond
-co-drawdown, then the 2023–2025 AI rally) — a hard regime the training period has no true
-analogue for. Data CSVs are regenerated from source (see [Reproduction](#6-reproduction)); they
-are not committed.
-
----
-
-## 2. Reward engineering — and the model evolution (Part A)
-
-The demo uses a 2-D state and a sparse reward. This project layered on three mechanisms, each
-motivated by the literature **before** it was tried:
-
-1. **Macro state (6-D).** Risk-neutral, macro-blind RL cannot see regime; regime-aware RL adds
-   latent macro signals to condition allocation (Adaptive & Regime-Aware RL, Raj 2025 — *further
-   reading*). We append 4 z-scored FRED factors.
-2. **Regime gate.** A binary stress flag $\mathrm{VIX}_z > 1.5$ **or** $\mathrm{T10Y2Y}_z < -1.5$
-   marks crisis days, so shaping can be applied *conditionally* rather than globally.
-3. **Regime-gated drawdown penalty**
-   $r_t = \log(W_{t+1}/W_t) - \beta \max(0, \mathrm{DD}_t - 0.03) + \text{terminal bonus}$,
-   with **$\beta = 8$ in stress, $2$ otherwise** (written out formally below). Encoding
-   drawdown/CVaR directly in the reward is the standard risk-sensitive-RL recipe
-   (Moody & Saffell 2001 for RL-for-trading reward design;
-   risk-sensitive DRL and CVaR-reward work — *further reading*). An earlier attempt used a
-   **λ-loss amplification** on stress days (Kahneman–Tversky 1979 loss aversion, λ≈2.5); it
-   **saturated and was abandoned** because a loss multiplier is action-independent, so it could
-   not teach *which* action to prefer in a regime. The drawdown penalty is action-dependent by
-   construction, which is why it worked where λ-loss did not.
-
-**Formally**, with a per-day stress flag $s_t$, running drawdown $\mathrm{DD}_t$, goal $G$, and
-terminal bonus $b$, the shipped **6.1** reward is
-
-```math
-s_t \;=\; \mathbf{1}\!\left[\mathrm{VIX}_z(t) > 1.5 \;\lor\; \mathrm{T10Y2Y}_z(t) < -1.5\right],
-\qquad
-\beta(s_t) \;=\;
-\begin{cases}
-8 & s_t = 1 \\[2pt]
-2 & s_t = 0
-\end{cases}
-```
-
-```math
-r_t \;=\; \log\frac{W_{t+1}}{W_t}
-\;-\; \beta(s_t)\,\max\!\left(0,\ \mathrm{DD}_t - 0.03\right)
-\;+\; b\,\mathbf{1}[t = T]\,\mathbf{1}[W_T \ge G]
-```
-
-```math
-\mathrm{DD}_t \;=\; \frac{\max_{k \le t} W_k - W_t}{\max_{k \le t} W_k}
-```
-
-The **abandoned** v2 variant amplified only stress-day losses — action-independent, hence it saturated:
-
-```math
-r_t^{\text{v2}} \;=\;
-\begin{cases}
-\lambda\,\log(W_{t+1}/W_t) & s_t = 1 \ \text{and} \ \log(W_{t+1}/W_t) < 0 \\[2pt]
-\log(W_{t+1}/W_t) & \text{otherwise}
-\end{cases}
-\qquad (\lambda \approx 2.5)
-```
-
-**Part A — the 6-D DQN evolution.** Each stage's 5 saved agents are re-loaded and replayed
-greedily through the test windows (each with its own train-window frontier + normalizer):
-
-| stage | Success /30 | Mean Sharpe | Across-seed std | Mean MaxDD | MaxDD P90 | Worst Sharpe | Term P10 |
-|---|---|---|---|---|---|---|---|
-| v3: raw 6-D macro | 11.6 | 0.25 | 0.27 | 6.2% | 12.7% | −6.78 | 91278 |
-| + regime reward (v2, λ-loss, *abandoned*) | 13.0 | 0.50 | 0.38 | 7.7% | 13.6% | −6.78 | 91259 |
-| + drawdown penalty (Plan C) | 10.6 | 0.36 | 0.25 | 5.8% | 10.9% | −6.32 | 93662 |
-| **6.1: regime-gated drawdown** | **14.6** | **0.66** | **0.23** | 7.8% | 15.5% | −7.21 | 89338 |
-
-![Part A evolution](experiments/figures/eval_partA_evolution.png)
-
-> **Protocol note (read before comparing to Part C).** Part A numbers are **gross (cost = 0),
-> per-window Sharpe** (each 30-day window resets wealth — this *flatters* Sharpe), averaged over
-> 5 seeds, and stop at **6.1 (pre-fix)**. Part C uses **net-of-cost, chained** Sharpe on the
-> *shipped, fixed* agent. 
-
-6.1 has the best mean Sharpe and the tightest across-seed spread — yet across-seed variance had
-haunted every version since Week 3. **Why?** That question is the real result.
-
----
-
-## 3. The divergence investigation (Part B) — the headline
-
-The across-seed instability was **not seed luck** — it was **Q-value divergence**. A confound-
-free probe (one **fresh MATLAB process per configuration**, because `trainFromData` carries
-internal RNG/datastore state that `rng(seed)` does not reset) shows the validation
-$\mathbb{E}\left[\max_a Q(s,a)\right]$ **explodes with training** — all seeds, reproducibly (≈2/61/2 at 100 epochs →
-≈3.3k/28k/52k at 400):
-
-![6.1 Q-value diverges](experiments/figures/week9c_divergence.png)
-
-This is the textbook **deadly triad** — function approximation + bootstrapping + off-policy /
-out-of-distribution `max` (Sutton & Barto 2018; van Hasselt et al. 2018; overestimation:
-van Hasselt et al. 2016). The blow-up epoch is *seed-dependent*, which is exactly why a fixed
-100-epoch snapshot caught each seed at a different point on its divergence trajectory.
-
-Concretely, the target the DQN critic regresses onto is
-
-```math
-y \;=\; r + \gamma\,\underbrace{\max_{a'} Q_{\bar\theta}(s', a')}_{\text{evaluated at out-of-distribution } a'}
-```
-
-and offline those $a'$ never appear in the dataset, so the $\max$ latches onto over-estimated
-Q-values that feed back through the recursion — the blow-up above.
-
-**Decomposition (each step gated by an independent review):**
-
-```mermaid
-flowchart TD
-  A["6.1: large across-seed Sharpe variance"] --> B["confound-free probe<br/>(fresh process per config)"]
-  B --> C["val max_a Q DIVERGES<br/>(~5×10⁴ by 400 epochs)"]
-  C --> D["attribute the cause"]
-  D --> E["fast target update + slightly-high LR<br/>(NOT reward scale — ruled out)"]
-  E --> F["fix: Polyak target τ=1e-3 + LR 1e-4<br/>= tuned-DQN, Q bounded to O(1)"]
-  F --> G["IQL cross-check:<br/>removes the OOD-max term by construction"]
-  G --> H["equivalent policy ⇒ fix is complete;<br/>the ceiling is the data/regime, not the algorithm"]
-```
-
-- **Target-update speed is the dominant driver.** 6.1 hard-copied the target net every 4 steps.
-  Switching to **Polyak soft-averaging (τ = 1e-3)** bounds Q and collapses the across-seed
-  spread; lowering the critic **LR 5e-4 → 1e-4** removes a residual at 400 epochs.
-- **Reward scale is *not* the cause** — shrinking the terminal bonus 1.0 → 0.05 did not fix the
-  residual (ruling out the sparse-bonus scale).
-
-![Polyak fix bounds Q](experiments/figures/week9d_ab_slowtarget.png)
-
-**IQL as the principled cross-check.** Implicit Q-Learning (Kostrikov et al. 2022) learns an
-**expectile of V** from *in-dataset* actions and bootstraps Q from $V(s')$ — so the exploding
-$\max_{a'} Q(s', a'_{\mathrm{OOD}})$ term **never appears**. Built from scratch (a custom `dlfeval` loop, since
-`trainFromData` has no IQL). Both learners end **bounded and reproducible**; a structurally
-different method reaching an **equivalent policy** confirms the fix is complete and the ceiling
-is the data/regime, not the algorithm. (See also the offline-RL pessimism literature: Levine et
-al. 2020; Kumar et al. 2020, CQL.) It replaces that $\max$ with an **in-sample expectile** of
-$V$ (level $\tau=0.7$) and a plain TD backup — **no $\max$ over OOD actions anywhere**:
-
-```math
-L_V \;=\; \mathbb{E}_{(s,a)\sim\mathcal{D}}
-\Big[\,\left|\tau - \mathbf{1}(u < 0)\right|\;u^2\,\Big],
-\qquad u \;=\; Q_{\bar\theta}(s,a) - V_\psi(s)
-```
-
-```math
-L_Q \;=\; \mathbb{E}_{(s,a,s')\sim\mathcal{D}}
-\Big[\,\big(r + \gamma\,V_\psi(s') - Q_\theta(s,a)\big)^2\,\Big]
-```
-
-![tuned-DQN vs IQL — both bounded](experiments/figures/week10_dqn_vs_iql.png)
-
-**Net:** 6.1's instability was two misconfigured hyperparameters (fast target + slightly-high
-LR). A properly-configured vanilla DQN (Polyak τ=1e-3 + LR 1e-4) **converges**; IQL reaches the
-same place by construction.
-
----
-
-## 4. Evaluation (Part C): single-seed, then ensemble
-
-Cost-aware backtest on the 2022–2025 test path, **net 10 bp**, with a **moving-block bootstrap**
-95% Sharpe CI (block = 30-day horizon; Künsch 1989) and the **Deflated Sharpe Ratio** (DSR;
-Bailey & López de Prado 2014, trial count set to the honest ~40 configs tried across the
-project):
-
-```math
-\mathrm{DSR} \;=\; \Phi\!\left(
-\frac{\left(\widehat{SR} - SR_0\right)\sqrt{T-1}}
-     {\sqrt{\,1 - \gamma_3\widehat{SR} + \dfrac{\gamma_4 - 1}{4}\widehat{SR}^{\,2}\,}}
-\right)
-```
-
-where $\gamma_3,\gamma_4$ are the return skew/kurtosis and $SR_0$ is the Sharpe one would
-expect as the maximum across the $N$ trials under the null — so a high nominal Sharpe is
-discounted for both non-normality and multiple testing. Chained Sharpe (no per-window reset)
-is the primary, honest metric; total return is
-secondary because it hides path risk.
-
-**Baselines.** *behavior-random* (the uniform-random frontier policy that generated the offline
-data — beating it is the canonical offline-RL success test); **1/N** equal-weight (DeMiguel,
-Garlappi & Uppal 2009, "hard to beat"); **MVO** = max-Sharpe tangency **fit on train, not
-re-estimated on test**; **60/40** daily constant mix.
-
-### C1 — single shipped agent (seed 1000)
-
-| strategy | **Chained Sharpe** | 95% CI | DSR | Total ret | MaxDD P90 | Term P10 | Succ /30 |
-|---|---|---|---|---|---|---|---|
-| tuned-DQN (seed 1000) | 0.38 | **[−0.56, 1.61]** | 0.07 | +55.5% | 18.6% | 91567 | 15 |
-| IQL (seed 1000) | 0.19 | **[−0.66, 1.42]** | 0.03 | +17.5% | 13.3% | 90931 | 12 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** | 19 |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 | 12 |
-| MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 | 8 |
-| behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 | 11 |
-
-![Part C1 single-seed equity](experiments/figures/eval_partC1_single_equity.png)
-
-**Read it correctly.** The tuned-DQN's headline **+55.5% total return is *not* an edge**: its
-**chained Sharpe (0.38) is below naïve 1/N (0.62)** — the extra return was bought with enough
-extra volatility and drawdown (MaxDD P90 18.6% vs 1/N's 10.3%) that it is *less* risk-efficient.
-Its CI includes 0; its DSR (0.07) survives no multiple-testing haircut. **Seed 1000 is the
-default first seed used a-priori throughout the project, and it also happens to be the strongest
-single path on this test set** — so it must not carry the argument. The load-bearing comparison
-is the unbiased ensemble below.
-
-### C2 — N = 10 seed ensemble (average Q, then argmax)
-
-| strategy | **Chained Sharpe** | 95% CI | DSR | Total ret | MaxDD P90 | Term P10 |
-|---|---|---|---|---|---|---|
-| tuned-DQN (N=10) | 0.12 | [−0.68, 1.37] | 0.02 | +12.4% | 15.4% | 91931 |
-| IQL (N=10) | −0.31 | [−0.99, 0.90] | 0.00 | −24.8% | 16.0% | 92132 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 |
-| MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 |
-| behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 |
-
-![Part C2 ensemble equity](experiments/figures/eval_partC2_ensemble_equity.png)
-
-The ensemble removes the single-seed luck: **tuned-DQN ties 60/40 (0.12 vs 0.13) and loses to
-1/N**; IQL's ensemble is negative on this path. The ensemble's total return is also **sensitive
-to N** (an earlier sweep gave materially different, even negative, totals at N=5 and N=20), so
-"+12.4%" is one pick, not a robust number.
-
-> **Two caveats that apply to both tables.** (1) *Cost:* results are at a single **10 bp**
-> operating point; the Week 8 cost-sweep harness (`src/archive/week8_backtest_harness.m`, 0/5/10/20 bp) had
-> already established the pattern — a nominal DQN edge at 0 bp evaporates by ~10 bp while 60/40
-> is nearly cost-flat at a fraction of the turnover. (`windowMetrics` also tracks per-strategy
-> turnover if a fuller table is wanted.) (2) *Chaining:* the 29 window-boundary rebalances are
-> **uncharged**, which favors the portfolio-switching agents over the static baselines — i.e.
-> the agents' true net numbers are, if anything, slightly worse than shown.
-
-### What the agent actually learned
-
-Because the policy is a deterministic `argmax_a Q(state)`, we can render it as a map over
-(wealth × time) at a fixed macro regime. Each cell = the single portfolio the N=10 ensemble
-would hold there (blue = defensive, yellow = aggressive):
-
-![Action policy map: NORMAL vs STRESS](experiments/figures/final_agent_action_policymap.png)
-
-Two readable structures: (1) **above the goal line → defensive; underfunded & late → aggressive**
-— the legitimate *gamble-for-resurrection* that GBWM theory predicts (Browne 1999; Das–Ostrov),
-i.e. correct **wealth**-conditioning. (2) The **STRESS panel shifts aggressive** (grid-mean
-action 4.8 → 9.3). This **counter-intuitive regime direction is a data limitation, not a smart
-bet**: every stress episode in the training period (incl. COVID 2020) was a V-shaped panic
-*followed by recovery*, so the reward taught "stress = buy the dip" — a reflex that misfires in
-2022's persistent grind. Separating the two drivers (wealth vs regime) keeps the story honest:
-the wealth-conditioning is correct; the regime-conditioning reflects what the data contained.
-
----
-
-## 5. Honest limitations & conclusion
-
-- **Statistical power.** One 2022–2025 regime (≈900 chained days of ~1000 available, autocorrelated) ⇒ the Sharpe standard
-  error is far too large to resolve the ~0.1 differences at stake. Every CI here includes 0.
-  This is a *sample* limitation — no algorithm beats it on this data, which is precisely why the
-  headline is the diagnosis, not the returns.
-- **What transfers** is method-level: a bounded, reproducible offline learner reached
-  independently by (a) a correctly-configured DQN (Polyak + LR) and (b) a structurally
-  pessimistic IQL — the equivalence is the confirmation.
-- **Excluded** from this deliverable: a separate simulation-based P(goal)/dynamic-programming
-  study (`archive/gbwm_pgoal/`), kept out to keep this report strictly real-data.
-
-**Conclusion.** This project's value is the offline-RL *engineering diagnosis*: identifying that
-"seed noise" was value divergence, attributing it to two hyperparameters, fixing it, and
-cross-validating with IQL — reported alongside fully honest performance nulls.
-
----
-
-## 6. Reproduction
-
-**Environment:** see [Requirements](#requirements) above — MATLAB **R2025b** plus the
-Reinforcement Learning, Financial, Deep Learning, and Statistics & Machine Learning toolboxes,
-and Python 3.9+ for the data fetch. Run everything from the repo root.
-
-**A fresh clone contains no data, models, or logs** — the `.gitignore` excludes `*.mat` (model
-files), `*.log`, `experiments/logs/*`, and `data/{prices,macro,dataset}_*.csv`. Everything is regenerate-only, in
-order:
-
-```bash
-# 0. one-time setup for the data fetch
-pip install -r scripts/requirements.txt
-export FRED_API_KEY=<your key>          # https://fred.stlouisfed.org/docs/api/api_key.html
-
-# 1. data (FRED + prices) and the extended train split
-python scripts/fetch_data.py
-python scripts/merge_train_val.py
-
-# 2. diagnosis figures (Part B) — fresh process per config
-bash scripts/run_week9c.sh   && matlab -batch "addpath('src'); week9c_plot"
-bash scripts/run_week9d.sh   && matlab -batch "addpath('src'); week9d_plot"
-bash scripts/run_matrix.sh   && matlab -batch "addpath('src'); week10_matrix_plot"
-
-# 3. train the deliverable agents (Part C weights)
-bash scripts/train_dqn_seeds.sh          # -> experiments/models/dqn_seed_*.mat
-bash scripts/train_iql_seeds.sh          # -> experiments/models/iql_seed_*.mat
-matlab -batch "addpath('src'); train_final_agent"   # -> FinalAgent.mat (seed 1000)
-
-# 4. the whole report evaluation (Parts A/B/C, all tables + figures)
-matlab -batch "addpath('src'); addpath('src/utils'); eval_compare"
-
-# acceptance: cold-load the shipped agent and run inference
-bash scripts/check_final_agent.sh
-```
-
-**Using the shipped agent** (clean session):
-
-```matlab
-S = load('experiments/models/FinalAgent.mat');          % struct FA — tuned-DQN, seed 1000
-% inputs: current wealth, step t in 1..30, raw macro [DGS10 T10Y2Y VIXCLS DFF]
-[actionIdx, weights] = predictAction(S.FA, 101000, 5, [4.2 -0.5 18 5.3]);
-% actionIdx -> one of the 15 frontier portfolios; weights -> 15-asset allocation (sums to 1)
-```
-
-The numbers in this README are persisted verbatim in [`docs/eval_results.txt`](docs/eval_results.txt).
-
-**Repository layout**
-
-```
-src/                current MATLAB code
-  checkRequirements.m toolbox/licence self-check
-  eval_compare.m      the report evaluation (Parts A/B/C)
-  train_final_agent.m / predictAction.m / predictActionIQL.m   train + inference
-  week9c/9d/9f_*      divergence diagnosis
-  week10_iql_session.m / week10_matrix_plot.m / week10_backtest.m
-  week10_action_policymap.m / week10_action_weights.m
-  week6_1_regime_gated.m   the pre-fix 6.1 baseline
-  utils/              buildEvalBasis · replayPolicy · windowMetrics ·
-                      blockBootstrapSharpeCI · deflatedSharpe · inputTestData
-  archive/            historical week2-8 / cql experiments
-scripts/            shell/python runners (fetch_data, run_week9*, train_*_seeds, ...)
-experiments/
-  models/  figures/  logs/(+archive/)     weights / plots / run logs  (gitignored)
-docs/               weekly_reports/ · eval_results.txt
-archive/gbwm_pgoal/ excluded simulation-based P(goal) study
-```
-
-**Deliverable figures** (all in `experiments/figures/`): `action_weight_composition`,
-`eval_partA_evolution`, `week9c_divergence`, `week9d_ab_slowtarget`, `week10_dqn_vs_iql`,
-`eval_partC1_single_equity`, `eval_partC2_ensemble_equity`, `final_agent_action_policymap`.
-(`week8_net_sharpe`, `week10_equity_curves/ensemble/n10`, and the single-seed action timeline
-are intentionally superseded by the `eval_part*` figures.)
-
----
-
-## 7. References
-
-**Goal-based wealth management & portfolio theory**
-- MathWorks. *Multi-Period Goal-Based Wealth Management Using Reinforcement Learning.* MATLAB
-  documentation example. https://www.mathworks.com/help/finance/multi-period-goal-based-wealth-management-using-reinforcement-learning.html
-- Markowitz, H. (1952). Portfolio Selection. *Journal of Finance* 7(1): 77–91.
-- Browne, S. (1999). Reaching goals by a deadline: digital options and continuous-time active
-  portfolio management. *Advances in Applied Probability* 31(2): 551–577.
-- Das, S. R., Ostrov, D., Radhakrishnan, A., & Srivastav, D. (2018). Goals-Based Wealth
-  Management: A New Approach. *Journal of Investment Management*; and *Dynamic portfolio
-  allocation in goals-based wealth management*, *Computational Management Science* (2019).
-
-**Reinforcement learning & offline RL**
-- Sutton, R. S., & Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press.
-- Mnih, V., et al. (2015). Human-level control through deep reinforcement learning. *Nature* 518: 529–533.
-- van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement Learning with Double
-  Q-learning. *AAAI*.
-- van Hasselt, H., Doron, Y., Strub, F., Hessel, M., Sonnerat, N., & Modayil, J. (2018). Deep
-  Reinforcement Learning and the Deadly Triad. *arXiv:1812.02648*.
-- Levine, S., Kumar, A., Tucker, G., & Fu, J. (2020). Offline Reinforcement Learning: Tutorial,
-  Review, and Perspectives on Open Problems. *arXiv:2005.01643*.
-- Kumar, A., Zhou, A., Tucker, G., & Levine, S. (2020). Conservative Q-Learning for Offline
-  Reinforcement Learning. *NeurIPS*.
-- Kostrikov, I., Nair, A., & Levine, S. (2022). Offline Reinforcement Learning with Implicit
-  Q-Learning. *ICLR 2022*.
-
-**Reward design, evaluation & statistics**
-- Moody, J., & Saffell, M. (2001). Learning to trade via direct reinforcement. *IEEE Transactions
-  on Neural Networks* 12(4): 875–889. (See also Moody, Wu, Liao & Saffell, 1998, *J. Forecasting*.)
-- Kahneman, D., & Tversky, A. (1979). Prospect Theory: An Analysis of Decision under Risk.
-  *Econometrica* 47(2): 263–291.
-- DeMiguel, V., Garlappi, L., & Uppal, R. (2009). Optimal Versus Naive Diversification: How
-  Inefficient Is the 1/N Portfolio Strategy? *Review of Financial Studies* 22(5): 1915–1953.
-- Bailey, D. H., & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection
-  Bias, Backtest Overfitting, and Non-Normality. *Journal of Portfolio Management* 40(5): 94–107.
-- Künsch, H. R. (1989). The Jackknife and the Bootstrap for General Stationary Observations.
-  *Annals of Statistics* 17(3): 1217–1241.
-
-**Further reading (motivating context, non-load-bearing)**
-- Wang, X., & Liu, L. (2025). Risk-Sensitive Deep Reinforcement Learning for Portfolio
-  Optimization. *JRFM* 18(7): 347.
-- Raj, G. N. (2025). Adaptive and Regime-Aware RL for Portfolio Optimization. *arXiv:2509.14385*.
-- Chen, et al. (2026). Behaviorally informed deep reinforcement learning for portfolio
-  optimization with loss aversion and overconfidence. *Scientific Reports*.
-- Ni, X., Liu, G., & Lai, L. (2024). Risk-Sensitive Reward-Free Reinforcement Learning with CVaR.
-  *ICML 2024*.
+| [§1 Background & concepts](docs/REPORT.md#1-background--concepts) | the GBWM objective; why an underfunded portfolio rationally takes *more* risk; how the 15-action frontier is built |
+| [§1.5 Data & experimental setup](docs/REPORT.md#15-data--experimental-setup) | the 15 assets, 4 FRED macro factors, train/test splits, and the evaluation protocol |
+| [§2 Reward engineering (Part A)](docs/REPORT.md#2-reward-engineering--and-the-model-evolution-part-a) | macro state, regime gate, the drawdown penalty, the abandoned λ-loss variant, and the stage-by-stage evolution table |
+| [§3 Divergence investigation (Part B)](docs/REPORT.md#3-the-divergence-investigation-part-b--the-headline) | the deadly-triad mechanism, how the cause was attributed, the fix, and the IQL cross-check |
+| [§4 Evaluation (Part C)](docs/REPORT.md#4-evaluation-part-c-single-seed-then-ensemble) | the Deflated Sharpe Ratio, block bootstrap, baseline definitions, and caveats |
+| [§5 Limitations & conclusion](docs/REPORT.md#5-honest-limitations--conclusion) | statistical power, and what actually transfers from this work |
+| [§6 Reproduction](docs/REPORT.md#6-reproduction) | the full regenerate-from-scratch recipe and repository layout |
+| [§7 References](docs/REPORT.md#7-references) | all cited literature |
 
 ---
 
@@ -596,5 +247,6 @@ Code and figures are released under the **MIT License** (see [`LICENSE`](LICENSE
 
 ---
 
-*Author: **Zhankai Zhang** · Mentored by Yuchen Dong (MathWorks). Reproducible per §6; all
-reported metrics are persisted in [`docs/eval_results.txt`](docs/eval_results.txt).*
+*Author: **Zhankai Zhang** · Mentored by Yuchen Dong (MathWorks). Reproducible per
+[§6 Reproduction](docs/REPORT.md#6-reproduction); all reported metrics are persisted in
+[`docs/eval_results.txt`](docs/eval_results.txt).*
