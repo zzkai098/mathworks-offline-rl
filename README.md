@@ -13,6 +13,104 @@ value-function divergence**, cross-validated with a from-scratch IQL implementat
 
 ---
 
+## Results at a glance
+
+Cost-aware backtest on the **2022–2025** hold-out, **net 10 bp**, chained across 30 windows
+into a single wealth path. Sharpe is the primary metric; CIs are moving-block bootstrap.
+
+| strategy | Chained Sharpe | 95% CI | Total ret | MaxDD P90 | Term P10 |
+|---|---|---|---|---|---|
+| tuned-DQN (seed 1000) | 0.38 | [−0.56, 1.61] | **+55.5%** | 18.6% | 91567 |
+| tuned-DQN (N=10 ensemble) | 0.12 | [−0.68, 1.37] | +12.4% | 15.4% | 91931 |
+| IQL (seed 1000) | 0.19 | [−0.66, 1.42] | +17.5% | 13.3% | 90931 |
+| **1/N equal-weight** | **0.62** | [−0.30, 1.71] | +37.4% | **10.3%** | **95855** |
+| 60/40 | 0.13 | [−0.93, 1.23] | +5.9% | 8.7% | 95302 |
+| behavior-random (the logging policy) | −0.64 | [−1.56, 0.56] | −45.9% | 17.0% | 86345 |
+
+![Ensemble equity curves, 2022–2025 net 10 bp](experiments/figures/eval_partC2_ensemble_equity.png)
+
+**How to read this table.** The eye-catching **+55.5%** is a *single seed* on a *single
+realized path* — its Sharpe (0.38) is still **below naïve 1/N (0.62)**, i.e. the extra return
+was bought with extra risk. The unbiased N=10 ensemble ties 60/40. And **every confidence
+interval includes zero**: on ~900 autocorrelated test days no strategy here is statistically
+separable from any other, so **this project makes no claim to beat a passive baseline**.
+
+> **The deliverable is the diagnosis, not the returns.** The result worth reading is
+> §[3](#3-the-divergence-investigation-part-b--the-headline): the agent's "seed noise" turned
+> out to be **Q-value divergence**, which is traced to two hyperparameters, fixed, and then
+> independently confirmed by a from-scratch IQL. The performance nulls above are reported
+> honestly as a *sample-size* limit, not hidden.
+
+---
+
+## How this project was done
+
+```mermaid
+flowchart TD
+  D["<b>Data</b><br/>15 assets + 4 FRED macro factors<br/>train 2010-2021 · test 2022-2025"]
+
+  subgraph A ["Part A — reward engineering (§2)"]
+    A1["6-D macro state"] --> A2["regime gate<br/>VIX_z &gt; 1.5 or slope_z &lt; -1.5"]
+    A2 --> A3["regime-gated<br/>drawdown penalty"]
+    A3 --> A4["agent <b>6.1</b>"]
+  end
+
+  subgraph B ["Part B — the diagnosis (§3)"]
+    B1["confound-free probe<br/>fresh process per config"]
+    B1 --> B2["val max Q <b>DIVERGES</b>"]
+    B2 --> B3["attribute cause:<br/>fast target update + high LR<br/><i>reward scale ruled out</i>"]
+    B3 --> B4["<b>fix</b>: Polyak τ=1e-3 + LR 1e-4<br/>⇒ tuned-DQN, Q bounded"]
+    B4 --> B5["IQL cross-check<br/>no OOD max by construction"]
+  end
+
+  subgraph C ["Part C — evaluation (§4)"]
+    C1["cost-aware chained backtest<br/>net 10 bp"]
+    C1 --> C2["vs 1/N · 60/40 · MVO ·<br/>behavior-random"]
+    C2 --> C3["block-bootstrap CI + DSR"]
+  end
+
+  D --> A1
+  A4 -->|"observed: large<br/>across-seed variance"| B1
+  B5 -->|"equivalent policy ⇒<br/>fix is complete"| C1
+  C3 --> R["<b>Honest result</b><br/>diagnosis is the contribution;<br/>returns are a statistical null"]
+```
+
+---
+
+## Requirements
+
+**MATLAB R2025b** with the following toolboxes (all are used by the training/eval path):
+
+| Toolbox | Used for | Key functions |
+|---|---|---|
+| Reinforcement Learning | offline training, agent & critic objects | `rlDQNAgent`, `rlVectorQValueFunction`, `trainFromData`, `rlTrainingFromDataOptions` |
+| Financial | efficient-frontier action basis | `Portfolio`, `estimateFrontier`, `estimateFrontierByReturn` |
+| Deep Learning | critic networks, custom IQL loop | `dlnetwork`, `dlfeval`, `adamupdate` |
+| Statistics and Machine Learning | percentile metrics, DSR moments | `prctile`, `skewness`, `kurtosis`, `normcdf` |
+
+Check your installation with `ver`, or run the bundled self-check:
+
+```bash
+matlab -batch "addpath('src'); checkRequirements"
+```
+
+**Python 3.9+** is needed only to fetch the data (not to train or evaluate):
+
+```bash
+pip install -r scripts/requirements.txt      # yfinance · pandas · fredapi · numpy
+export FRED_API_KEY=<your key>               # free: https://fred.stlouisfed.org/docs/api/api_key.html
+```
+
+**Quick start** (full recipe in §[6](#6-reproduction)):
+
+```bash
+python scripts/fetch_data.py && python scripts/merge_train_val.py   # 1. get data
+matlab -batch "addpath('src'); addpath('src/utils'); eval_compare"  # 2. reproduce all tables
+bash scripts/check_final_agent.sh                                   # 3. cold-load shipped agent
+```
+
+---
+
 ## Table of contents
 1. [Background & concepts](#1-background--concepts)
 2. [Data & experimental setup](#15-data--experimental-setup)
@@ -30,11 +128,13 @@ value-function divergence**, cross-validated with a from-scratch IQL implementat
 **Goal-Based Wealth Management (GBWM)** reframes "risk" as *the probability of not reaching a
 goal* rather than return volatility. The objective is
 
-$$\max_{A(0),\dots,A(T-1)}\; P\big(W(T) \ge G\big)$$
+```math
+\max_{A(0),\dots,A(T-1)}\; P\big(W(T) \ge G\big)
+```
 
-where `W(T)` is terminal wealth, `G` the goal, and `A(t)` the portfolio chosen each period.
+where $W(T)$ is terminal wealth, $G$ the goal, and $A(t)$ the portfolio chosen each period.
 This produces a famous paradox: when a portfolio is **underfunded**, *increasing* volatility
-can be optimal because it raises the chance of reaching `G` — the opposite of conventional
+can be optimal because it raises the chance of reaching $G$ — the opposite of conventional
 risk aversion (Browne 1999; Das, Ostrov et al. 2018). This project builds directly on the
 MathWorks GBWM-RL example (see References) and its problem framing.
 
@@ -42,7 +142,7 @@ MathWorks GBWM-RL example (see References) and its problem framing.
 
 | Component | Definition |
 |---|---|
-| **State** | `[normalized wealth, time]` in the demo; extended here to 6-D by appending 4 z-scored macro factors |
+| **State** | $[\tilde{W}_t,\ t/T]$ (normalized wealth, time) in the demo; extended here to 6-D by appending 4 z-scored macro factors |
 | **Action** | one of **15 discrete efficient-frontier portfolios** (each a full weight vector, not a single asset) |
 | **Reward** | sparse terminal bonus for reaching the goal, plus the shaping terms introduced below |
 | **Agent** | Deep Q-Network (discrete actions, continuous state); here also IQL |
@@ -58,8 +158,9 @@ mix**, sliding from defensive (bond/gold-heavy) to aggressive (equity-heavy):
 *Action 1 ≈ TLT 45% + GLD + defensive equity; action 15 ≈ 100% NVDA. Only the extreme
 aggressive corner degenerates to a single asset — every other action is a portfolio.*
 
-**Pipeline (offline RL).** Training never interacts with a live environment; it learns from a
-fixed dataset of logged transitions generated by a random *behavior policy*:
+**Data pipeline (offline RL).** Training never interacts with a live environment; it learns from
+a fixed dataset of logged transitions generated by a random *behavior policy*. (For the
+project-level methodology, see [How this project was done](#how-this-project-was-done) above.)
 
 ```mermaid
 flowchart LR
@@ -103,11 +204,13 @@ motivated by the literature **before** it was tried:
 1. **Macro state (6-D).** Risk-neutral, macro-blind RL cannot see regime; regime-aware RL adds
    latent macro signals to condition allocation (Adaptive & Regime-Aware RL, Raj 2025 — *further
    reading*). We append 4 z-scored FRED factors.
-2. **Regime gate.** A binary stress flag `VIX_z > 1.5 OR T10Y2Y_z < −1.5` marks crisis days, so
-   shaping can be applied *conditionally* rather than globally.
-3. **Regime-gated drawdown penalty** `r_t = log(W'/W) − β·max(0, DD_t − 3%) + terminal bonus`,
-   with **β = 8 in stress, 2 otherwise**. Encoding drawdown/CVaR directly in the reward is the
-   standard risk-sensitive-RL recipe (Moody & Saffell 2001 for RL-for-trading reward design;
+2. **Regime gate.** A binary stress flag $\mathrm{VIX}_z > 1.5$ **or** $\mathrm{T10Y2Y}_z < -1.5$
+   marks crisis days, so shaping can be applied *conditionally* rather than globally.
+3. **Regime-gated drawdown penalty**
+   $r_t = \log(W_{t+1}/W_t) - \beta \max(0, \mathrm{DD}_t - 0.03) + \text{terminal bonus}$,
+   with **$\beta = 8$ in stress, $2$ otherwise** (written out formally below). Encoding
+   drawdown/CVaR directly in the reward is the standard risk-sensitive-RL recipe
+   (Moody & Saffell 2001 for RL-for-trading reward design;
    risk-sensitive DRL and CVaR-reward work — *further reading*). An earlier attempt used a
    **λ-loss amplification** on stress days (Kahneman–Tversky 1979 loss aversion, λ≈2.5); it
    **saturated and was abandoned** because a loss multiplier is action-independent, so it could
@@ -117,13 +220,36 @@ motivated by the literature **before** it was tried:
 **Formally**, with a per-day stress flag $s_t$, running drawdown $\mathrm{DD}_t$, goal $G$, and
 terminal bonus $b$, the shipped **6.1** reward is
 
-$$s_t=\mathbb{1}\!\left[\mathrm{VIX}_z(t)>1.5\ \lor\ \mathrm{T10Y2Y}_z(t)<-1.5\right],\qquad \beta(s_t)=\begin{cases}8 & s_t=1\\ 2 & s_t=0\end{cases}$$
+```math
+s_t \;=\; \mathbf{1}\!\left[\mathrm{VIX}_z(t) > 1.5 \;\lor\; \mathrm{T10Y2Y}_z(t) < -1.5\right],
+\qquad
+\beta(s_t) \;=\;
+\begin{cases}
+8 & s_t = 1 \\[2pt]
+2 & s_t = 0
+\end{cases}
+```
 
-$$r_t=\log\frac{W_{t+1}}{W_t}\;-\;\beta(s_t)\,\max\!\left(0,\ \mathrm{DD}_t-0.03\right)\;+\;b\,\mathbb{1}[t=T]\,\mathbb{1}[W_T\ge G],\qquad \mathrm{DD}_t=\frac{\max_{k\le t}W_k-W_t}{\max_{k\le t}W_k}$$
+```math
+r_t \;=\; \log\frac{W_{t+1}}{W_t}
+\;-\; \beta(s_t)\,\max\!\left(0,\ \mathrm{DD}_t - 0.03\right)
+\;+\; b\,\mathbf{1}[t = T]\,\mathbf{1}[W_T \ge G]
+```
+
+```math
+\mathrm{DD}_t \;=\; \frac{\max_{k \le t} W_k - W_t}{\max_{k \le t} W_k}
+```
 
 The **abandoned** v2 variant amplified only stress-day losses — action-independent, hence it saturated:
 
-$$r_t^{\text{v2}}=\begin{cases}\lambda\,\log(W_{t+1}/W_t) & s_t=1\ \text{and}\ \log(W_{t+1}/W_t)<0\\ \log(W_{t+1}/W_t) & \text{otherwise}\end{cases}\qquad(\lambda\approx2.5)$$
+```math
+r_t^{\text{v2}} \;=\;
+\begin{cases}
+\lambda\,\log(W_{t+1}/W_t) & s_t = 1 \ \text{and} \ \log(W_{t+1}/W_t) < 0 \\[2pt]
+\log(W_{t+1}/W_t) & \text{otherwise}
+\end{cases}
+\qquad (\lambda \approx 2.5)
+```
 
 **Part A — the 6-D DQN evolution.** Each stage's 5 saved agents are re-loaded and replayed
 greedily through the test windows (each with its own train-window frontier + normalizer):
@@ -152,7 +278,7 @@ haunted every version since Week 3. **Why?** That question is the real result.
 The across-seed instability was **not seed luck** — it was **Q-value divergence**. A confound-
 free probe (one **fresh MATLAB process per configuration**, because `trainFromData` carries
 internal RNG/datastore state that `rng(seed)` does not reset) shows the validation
-`mean(max_a Q)` **explodes with training** — all seeds, reproducibly (≈2/61/2 at 100 epochs →
+$\mathbb{E}\left[\max_a Q(s,a)\right]$ **explodes with training** — all seeds, reproducibly (≈2/61/2 at 100 epochs →
 ≈3.3k/28k/52k at 400):
 
 ![6.1 Q-value diverges](experiments/figures/week9c_divergence.png)
@@ -164,7 +290,9 @@ van Hasselt et al. 2016). The blow-up epoch is *seed-dependent*, which is exactl
 
 Concretely, the target the DQN critic regresses onto is
 
-$$y=r+\gamma\,\underbrace{\max_{a'}Q_{\bar\theta}(s',a')}_{\text{evaluated at out-of-distribution }a'}$$
+```math
+y \;=\; r + \gamma\,\underbrace{\max_{a'} Q_{\bar\theta}(s', a')}_{\text{evaluated at out-of-distribution } a'}
+```
 
 and offline those $a'$ never appear in the dataset, so the $\max$ latches onto over-estimated
 Q-values that feed back through the recursion — the blow-up above.
@@ -191,17 +319,24 @@ flowchart TD
 ![Polyak fix bounds Q](experiments/figures/week9d_ab_slowtarget.png)
 
 **IQL as the principled cross-check.** Implicit Q-Learning (Kostrikov et al. 2022) learns an
-**expectile of V** from *in-dataset* actions and bootstraps Q from `V(s')` — so the exploding
-`max_a Q(s', a_OOD)` term **never appears**. Built from scratch (a custom `dlfeval` loop, since
+**expectile of V** from *in-dataset* actions and bootstraps Q from $V(s')$ — so the exploding
+$\max_{a'} Q(s', a'_{\mathrm{OOD}})$ term **never appears**. Built from scratch (a custom `dlfeval` loop, since
 `trainFromData` has no IQL). Both learners end **bounded and reproducible**; a structurally
 different method reaching an **equivalent policy** confirms the fix is complete and the ceiling
 is the data/regime, not the algorithm. (See also the offline-RL pessimism literature: Levine et
 al. 2020; Kumar et al. 2020, CQL.) It replaces that $\max$ with an **in-sample expectile** of
-$V$ (level $\tau=0.7$) and a plain TD backup — **no `max` over OOD actions anywhere**:
+$V$ (level $\tau=0.7$) and a plain TD backup — **no $\max$ over OOD actions anywhere**:
 
-$$L_V=\mathbb{E}_{(s,a)\sim\mathcal{D}}\big[\,|\tau-\mathbb{1}(u<0)|\;u^2\,\big],\quad u=Q_{\bar\theta}(s,a)-V_\psi(s)$$
+```math
+L_V \;=\; \mathbb{E}_{(s,a)\sim\mathcal{D}}
+\Big[\,\left|\tau - \mathbf{1}(u < 0)\right|\;u^2\,\Big],
+\qquad u \;=\; Q_{\bar\theta}(s,a) - V_\psi(s)
+```
 
-$$L_Q=\mathbb{E}_{(s,a,s')\sim\mathcal{D}}\big[\,\big(r+\gamma\,V_\psi(s')-Q_\theta(s,a)\big)^2\,\big]$$
+```math
+L_Q \;=\; \mathbb{E}_{(s,a,s')\sim\mathcal{D}}
+\Big[\,\big(r + \gamma\,V_\psi(s') - Q_\theta(s,a)\big)^2\,\Big]
+```
 
 ![tuned-DQN vs IQL — both bounded](experiments/figures/week10_dqn_vs_iql.png)
 
@@ -218,7 +353,12 @@ Cost-aware backtest on the 2022–2025 test path, **net 10 bp**, with a **moving
 Bailey & López de Prado 2014, trial count set to the honest ~40 configs tried across the
 project):
 
-$$\mathrm{DSR}=\Phi\!\left(\frac{(\widehat{SR}-SR_0)\sqrt{T-1}}{\sqrt{1-\gamma_3\widehat{SR}+\tfrac{\gamma_4-1}{4}\widehat{SR}^2}}\right)$$
+```math
+\mathrm{DSR} \;=\; \Phi\!\left(
+\frac{\left(\widehat{SR} - SR_0\right)\sqrt{T-1}}
+     {\sqrt{\,1 - \gamma_3\widehat{SR} + \dfrac{\gamma_4 - 1}{4}\widehat{SR}^{\,2}\,}}
+\right)
+```
 
 where $\gamma_3,\gamma_4$ are the return skew/kurtosis and $SR_0$ is the Sharpe one would
 expect as the maximum across the $N$ trials under the null — so a high nominal Sharpe is
@@ -317,14 +457,19 @@ cross-validating with IQL — reported alongside fully honest performance nulls.
 
 ## 6. Reproduction
 
-**Environment:** MATLAB **R2025b** with Reinforcement Learning, Financial, Statistics & Machine
-Learning, Deep Learning, and Optimization toolboxes. Run from the repo root.
+**Environment:** see [Requirements](#requirements) above — MATLAB **R2025b** plus the
+Reinforcement Learning, Financial, Deep Learning, and Statistics & Machine Learning toolboxes,
+and Python 3.9+ for the data fetch. Run everything from the repo root.
 
 **A fresh clone contains no data, models, or logs** — the `.gitignore` excludes `*.mat` (model
 files), `*.log`, `experiments/logs/*`, and `data/{prices,macro,dataset}_*.csv`. Everything is regenerate-only, in
 order:
 
 ```bash
+# 0. one-time setup for the data fetch
+pip install -r scripts/requirements.txt
+export FRED_API_KEY=<your key>          # https://fred.stlouisfed.org/docs/api/api_key.html
+
 # 1. data (FRED + prices) and the extended train split
 python scripts/fetch_data.py
 python scripts/merge_train_val.py
@@ -361,6 +506,7 @@ The numbers in this README are persisted verbatim in [`docs/eval_results.txt`](d
 
 ```
 src/                current MATLAB code
+  checkRequirements.m toolbox/licence self-check
   eval_compare.m      the report evaluation (Parts A/B/C)
   train_final_agent.m / predictAction.m / predictActionIQL.m   train + inference
   week9c/9d/9f_*      divergence diagnosis
