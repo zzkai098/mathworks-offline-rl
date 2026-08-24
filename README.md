@@ -56,16 +56,16 @@ per-window (wealth resets each window, goal = +2%).*
 
 **How to read these tables**
 
-- **+55.5% is not an edge** — that seed's Sharpe (0.38) is below 1/N's (0.62), and seed 1000
-  is the strongest single path on this test set.
-- **The N=10 ensemble is the load-bearing number** — it ties 60/40 and loses to 1/N. Its total
-  return is also sensitive to N.
-- **Every CI includes zero.** ~900 autocorrelated days in one regime separates nothing.
+- **Offline learning did work.** Every configuration beats **behavior-random** — the policy
+  that generated its own training data — by +0.33 to +1.02 Sharpe. That is the canonical
+  offline-RL success test, and all four agents pass it.
+- **It did not beat the naive baselines.** +55.5% is not an edge: that seed's Sharpe (0.38) is
+  below 1/N's (0.62). The N=10 ensemble ties 60/40 and loses to 1/N.
+- **Every CI includes zero** — including the margin over behavior-random. ~900 autocorrelated
+  days in one regime separates nothing.
 - **Nothing survives the multiple-testing haircut** — DSR peaks at 0.15 (1/N); every agent is
   ≤ 0.07. **No claim is made to beat a passive baseline**
   ([Limitations](docs/REPORT.md#5-honest-limitations--conclusion)).
-- **Costs are one 10 bp point**, and the 29 window-boundary rebalances are uncharged — so the
-  agents' true net numbers are, if anything, slightly worse than shown.
 
 ### The core finding — Q-value divergence, and the fix
 
