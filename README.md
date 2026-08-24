@@ -19,15 +19,6 @@ All numbers below are on the **2022–2025 hold-out**, **net 10 bp** of drift-aw
 cost, over 30 non-overlapping 30-day windows. Sharpe is the primary metric; 95% CIs are
 moving-block bootstrap (block = the 30-day horizon).
 
-> **Two column scopes — read them separately.** *Chained Sharpe* and *Total ret* are computed
-> on the **single chained wealth path** (the 30 windows joined end to end, so losses compound).
-> *MaxDD P90*, *Term P10* and *Succ /30* are **per-window** statistics — wealth resets to
-> 100,000 at the start of each 30-day window (`src/utils/windowMetrics.m:31-48`). So they
-> describe *typical 30-day* risk, **not** the drawdown of the chained path: "+55.5% total
-> return" and "18.6% MaxDD P90" are **not two properties of the same curve**. *Succ /30* counts
-> windows ending at or above the goal, which is `goalWealth = 102000` against a 100,000 start —
-> a **+2% hurdle over 30 days**.
-
 ### Performance vs baselines
 
 Baselines: **behavior-random** (the uniform-random frontier policy that generated the offline
@@ -60,36 +51,26 @@ data — beating it is the canonical offline-RL success test), **1/N** equal-wei
 
 ![Part C2 ensemble equity](experiments/figures/eval_partC2_ensemble_equity.png)
 
+*Chained Sharpe and Total ret are on the chained path; MaxDD P90, Term P10 and Succ /30 are
+per-window (wealth resets each window, goal = +2%).*
+
 **How to read these tables**
 
-- **The +55.5% is one seed, not an edge.** On the like-for-like metric — chained Sharpe, which
-  prices return *and* risk on the same path — seed 1000 scores 0.38, *below* naïve 1/N's 0.62.
-  It is less risk-efficient, not more. (Its per-window MaxDD P90 is also the worst in the
-  table, 18.6% vs 1/N's 10.3% — a separate scope, but pointing the same way.) **Seed 1000 is
-  the default first seed used a-priori throughout the project, and it also happens to be the
-  strongest single path on this test set**, so it must not carry the argument.
-- **The N=10 ensemble is the load-bearing number.** It removes single-seed luck: tuned-DQN
-  ties 60/40 (0.12 vs 0.13) and still loses to 1/N. Its total return is also **sensitive to N**
-  — an earlier sweep gave materially different, even negative, totals at N=5 and N=20 — so
-  "+12.4%" is one pick, not a robust figure.
-- **Every confidence interval includes zero.** On ~900 autocorrelated test days in a single
-  regime, no strategy here is statistically separable from any other.
-- **Nothing survives the multiple-testing haircut.** The highest DSR in either table is 0.15
-  (1/N); every agent is at 0.07 or below. **This project makes no claim to beat a passive
-  baseline** — see [Limitations](docs/REPORT.md#5-honest-limitations--conclusion).
-
-> **Two caveats on both tables.** (1) *Cost:* these are a single **10 bp** operating point;
-> the Week 8 cost sweep (0/5/10/20 bp) had already shown a nominal DQN edge at 0 bp
-> evaporating by ~10 bp while 60/40 stays nearly cost-flat at a fraction of the turnover.
-> (2) *Chaining:* the 29 window-boundary rebalances are **uncharged**, which favours the
-> portfolio-switching agents over the static baselines — so the agents' true net numbers are,
-> if anything, slightly worse than shown.
+- **+55.5% is not an edge** — that seed's Sharpe (0.38) is below 1/N's (0.62), and seed 1000
+  is the strongest single path on this test set.
+- **The N=10 ensemble is the load-bearing number** — it ties 60/40 and loses to 1/N. Its total
+  return is also sensitive to N.
+- **Every CI includes zero.** ~900 autocorrelated days in one regime separates nothing.
+- **Nothing survives the multiple-testing haircut** — DSR peaks at 0.15 (1/N); every agent is
+  ≤ 0.07. **No claim is made to beat a passive baseline**
+  ([Limitations](docs/REPORT.md#5-honest-limitations--conclusion)).
+- **Costs are one 10 bp point**, and the 29 window-boundary rebalances are uncharged — so the
+  agents' true net numbers are, if anything, slightly worse than shown.
 
 ### The core finding — Q-value divergence, and the fix
 
-The across-seed instability that had haunted every version since Week 3 was **not seed luck**.
-A confound-free probe (one fresh MATLAB process per configuration) shows the validation
-$\mathbb{E}[\max_a Q]$ **explodes with training**, reproducibly, on every seed:
+The across-seed instability that had haunted every version since Week 3 was **not seed luck** —
+the validation $\mathbb{E}[\max_a Q]$ **diverges**, reproducibly, on every seed:
 
 | MaxEpochs | 100 | 200 | 400 |
 |---|---|---|---|
@@ -97,52 +78,32 @@ $\mathbb{E}[\max_a Q]$ **explodes with training**, reproducibly, on every seed:
 
 ![6.1 Q-value diverges](experiments/figures/week9c_divergence.png)
 
-- **The blow-up epoch is seed-dependent** — which is precisely why a fixed 100-epoch snapshot
-  caught each seed at a different point on its divergence trajectory and looked like "seed
-  noise". This is the textbook **deadly triad** (function approximation + bootstrapping +
-  off-policy `max` over out-of-distribution actions).
-- **Two misconfigured hyperparameters, not a broken algorithm.** Switching the target network
-  from a hard copy every 4 steps to **Polyak averaging (τ = 1e-3)** and lowering the critic
-  **LR 5e-4 → 1e-4** bounds Q to O(1) and collapses the across-seed spread.
-- **Reward scale was ruled out** — shrinking the terminal bonus 1.0 → 0.05 did not remove the
-  residual, so the sparse bonus is not the cause.
-
-![Polyak fix bounds Q](experiments/figures/week9d_ab_slowtarget.png)
-
-- **"Converges" carries one asterisk.** Both learners end bounded, but not identically:
-  **IQL stays under the ~1.14 economic ceiling and flat across all epochs (0.24–0.96), while
-  tuned-DQN reaches 1.86 by 400 epochs and is still mildly rising.** The marginal instability
-  is suppressed, not eliminated — the ceiling is drawn on the figure below, and the DQN trace
-  crosses it. That residual is exactly why the IQL cross-check is worth reporting rather than
-  optional.
-- **IQL confirms the fix structurally.** Implicit Q-Learning bootstraps from an in-sample
-  expectile of $V$, so the exploding `max` over OOD actions never appears by construction
-  (built from scratch, custom `dlfeval` loop). On the deciding diagnostic — across-seed
-  eval-Sharpe over the epoch sweep — the two learners are **statistically indistinguishable**
-  (n = 3, crossing, overlapping error bars). A structurally different learner reaching the
-  same place on that metric is the confirmation that the fix is complete and the remaining
-  ceiling is the data, not the algorithm. On the cost-aware chained evaluation above the two
-  do diverge materially (0.12 vs −0.31) — a different protocol on a single realized path,
-  which the confidence intervals already say cannot be resolved.
+- **The blow-up epoch is seed-dependent**, so a fixed 100-epoch snapshot caught each seed at a
+  different point — that is the "seed noise". Textbook **deadly triad**.
+- **Two misconfigured hyperparameters, not a broken algorithm** — Polyak target averaging
+  (τ = 1e-3) plus critic LR 5e-4 → 1e-4 bounds Q and collapses the spread. Reward scale was
+  tested and ruled out.
+- **"Converges" carries one asterisk** — IQL stays under the ~1.14 ceiling and flat
+  (0.24–0.96); tuned-DQN reaches 1.86 at 400 epochs and is **still mildly rising**. Suppressed,
+  not eliminated — which is why the IQL cross-check is worth reporting.
+- **IQL confirms the fix structurally** (in-sample expectile ⇒ no OOD `max` at all). The two are
+  statistically indistinguishable on the deciding diagnostic (n = 3), though they do diverge on
+  the chained evaluation above (0.12 vs −0.31) — a different protocol, single path.
 
 ![tuned-DQN vs IQL — both bounded](experiments/figures/week10_dqn_vs_iql.png)
 
 ### What the agent actually learned
 
-The policy is a deterministic `argmax_a Q(state)`, so it can be rendered directly as a map
-over (wealth × time) at a fixed macro regime — each cell is the portfolio the N=10 ensemble
-would hold there (blue = defensive, yellow = aggressive):
+The policy is a deterministic `argmax_a Q(state)`, so it renders directly as a map over
+(wealth × time) — each cell is the portfolio the N=10 ensemble holds there:
 
 ![Action policy map: NORMAL vs STRESS](experiments/figures/final_agent_action_policymap.png)
 
-- **Wealth-conditioning is correct.** Above the goal line the agent turns defensive; when
-  underfunded and late it turns aggressive — the *gamble-for-resurrection* behaviour GBWM
-  theory predicts (Browne 1999; Das–Ostrov).
-- **Regime-conditioning runs the wrong way**, and this is a **data limitation, not a smart
-  bet.** The STRESS panel shifts aggressive (grid-mean action 4.8 → 9.3) because every stress
-  episode in the training period — including COVID 2020 — was a V-shaped panic followed by
-  recovery, so the reward taught "stress = buy the dip", a reflex that misfires in 2022's
-  persistent grind.
+- **Wealth-conditioning is correct** — defensive above the goal line, aggressive when
+  underfunded and late: the *gamble-for-resurrection* GBWM theory predicts.
+- **Regime-conditioning runs the wrong way** (STRESS shifts aggressive, grid-mean 4.8 → 9.3).
+  A **data limitation, not a smart bet** — every training-period stress event was a V-shaped
+  panic, so the reward taught "buy the dip", which misfires in 2022's grind.
 
 ## Workflow
 
