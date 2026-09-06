@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 740" width="1180" height="740" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a8f98"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="740" fill="#ffffff"/>
+
+  <!-- ============ AGENT ============ -->
+  <rect x="330" y="50" width="520" height="390" rx="18" fill="#dbe8fb" stroke="#2b5fa8" stroke-width="2"/>
+  <text x="590" y="84" text-anchor="middle" font-size="20" font-weight="700" fill="#173e73" letter-spacing="1.5">AGENT</text>
+
+  <!-- policy -->
+  <rect x="410" y="108" width="360" height="80" rx="8" fill="#fdf0c8" stroke="#c99a19" stroke-width="2"/>
+  <text x="590" y="136" text-anchor="middle" font-size="15" font-weight="700" fill="#5c4406" letter-spacing="1">POLICY</text>
+  <text x="590" y="158" text-anchor="middle" font-size="13.5" fill="#3d3d3d">greedy  a = argmax_a Q(s, a)</text>
+  <text x="590" y="177" text-anchor="middle" font-size="12.5" fill="#6b6b6b">deterministic — no exploration at test time</text>
+
+  <!-- learning algorithm -->
+  <rect x="392" y="286" width="396" height="114" rx="8" fill="#fdf0c8" stroke="#c99a19" stroke-width="2"/>
+  <text x="590" y="312" text-anchor="middle" font-size="15" font-weight="700" fill="#5c4406" letter-spacing="1">OFFLINE RL ALGORITHM</text>
+  <text x="590" y="336" text-anchor="middle" font-size="13.5" fill="#3d3d3d">tuned-DQN &#8212; Polyak &#964; = 1e&#8722;3, critic LR 1e&#8722;4</text>
+  <text x="590" y="357" text-anchor="middle" font-size="13.5" fill="#3d3d3d">cross-checked by a from-scratch IQL</text>
+  <text x="590" y="382" text-anchor="middle" font-size="12.5" font-style="italic" fill="#6b6b6b">learns only from the fixed dataset</text>
+
+  <!-- policy update arrow -->
+  <line x1="590" y1="286" x2="590" y2="196" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <text x="604" y="230" font-size="13" font-weight="700" fill="#1a1a1a">POLICY</text>
+  <text x="604" y="248" font-size="13" font-weight="700" fill="#1a1a1a">UPDATE</text>
+
+  <!-- ============ OBSERVATION (left path) ============ -->
+  <polyline points="330,601 60,601 60,148 402,148" fill="none" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <circle cx="360" cy="148" r="5" fill="#1a1a1a"/>
+  <polyline points="360,148 360,343 384,343" fill="none" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <text x="74" y="186" font-size="15" font-weight="700" fill="#1a1a1a">OBSERVATION  s<tspan font-size="11" dy="4">t</tspan></text>
+  <text x="74" y="212" font-size="13" fill="#3d3d3d">6-D:  wealth &#183; time-to-goal</text>
+  <text x="74" y="232" font-size="13" fill="#3d3d3d">+ 4 macro z-scores (DGS10, slope,</text>
+  <text x="74" y="252" font-size="13" fill="#3d3d3d">VIX, fed funds), train-fit standardised</text>
+
+  <!-- ============ ACTION (right path) ============ -->
+  <polyline points="778,148 1120,148 1120,601 858,601" fill="none" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <circle cx="800" cy="148" r="5" fill="#1a1a1a"/>
+  <polyline points="800,148 800,343 796,343" fill="none" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <text x="1106" y="186" text-anchor="end" font-size="15" font-weight="700" fill="#1a1a1a">ACTION  a<tspan font-size="11" dy="4">t</tspan></text>
+  <text x="1106" y="212" text-anchor="end" font-size="13" fill="#3d3d3d">1 of 15 efficient-frontier</text>
+  <text x="1106" y="232" text-anchor="end" font-size="13" fill="#3d3d3d">portfolios over 15 assets,</text>
+  <text x="1106" y="252" text-anchor="end" font-size="13" fill="#3d3d3d">defensive &#8594; aggressive</text>
+
+  <!-- ============ REWARD ============ -->
+  <line x1="590" y1="556" x2="590" y2="402" stroke="#1a1a1a" stroke-width="2.2" marker-end="url(#ah)"/>
+  <text x="604" y="466" font-size="15" font-weight="700" fill="#1a1a1a">REWARD  r<tspan font-size="11" dy="4">t</tspan></text>
+  <text x="604" y="492" font-size="13" fill="#3d3d3d">log(W&#8242;/W) &#8722; &#946;(regime)&#183;max(0, DD &#8722; 3%)</text>
+  <text x="604" y="514" font-size="13" fill="#3d3d3d">+ terminal goal bonus &#160;&#160; &#946; = 8 stress / 2 normal</text>
+  <text x="604" y="536" font-size="12.5" font-style="italic" fill="#6b6b6b">regime gate: VIX_z &gt; 1.5 or slope_z &lt; &#8722;1.5</text>
+
+  <!-- ============ ENVIRONMENT ============ -->
+  <rect x="330" y="556" width="520" height="92" rx="14" fill="#dbe8fb" stroke="#2b5fa8" stroke-width="2"/>
+  <text x="590" y="586" text-anchor="middle" font-size="17" font-weight="700" fill="#173e73" letter-spacing="1.2">ENVIRONMENT &#8212; LOGGED, NOT LIVE</text>
+  <text x="590" y="609" text-anchor="middle" font-size="13" fill="#3d3d3d">real market returns, train 2010&#8211;2021 &#183; hold-out 2022&#8211;2025</text>
+  <text x="590" y="630" text-anchor="middle" font-size="13" fill="#3d3d3d">episodes pre-generated by a uniform-random frontier policy</text>
+
+  <!-- ============ offline note ============ -->
+  <line x1="963" y1="601" x2="963" y2="676" stroke="#8a8f98" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="963" y="696" text-anchor="middle" font-size="12.5" font-style="italic" fill="#6f757e">during training this return path is inert &#8212;</text>
+  <text x="963" y="714" text-anchor="middle" font-size="12.5" font-style="italic" fill="#6f757e">the agent cannot change the data it learns from</text>
+  <text x="74" y="696" font-size="12.5" font-style="italic" fill="#6f757e">The loop closes only at evaluation, when the greedy policy</text>
+  <text x="74" y="714" font-size="12.5" font-style="italic" fill="#6f757e">is rolled out on the 2022&#8211;2025 hold-out, net of 10 bp cost.</text>
+</svg>

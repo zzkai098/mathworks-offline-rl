@@ -13,6 +13,10 @@ value-function divergence**, cross-validated with a from-scratch IQL implementat
 
 ---
 
+## How it works
+
+![Offline RL loop for goal-based portfolio management](experiments/figures/rl_loop_offline.svg)
+
 ## Results
 
 All numbers below are on the **2022–2025 hold-out**, **net 10 bp** of drift-aware turnover
