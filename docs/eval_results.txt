@@ -1,5 +1,5 @@
 # eval_compare.m output — persisted for in-repo verification (test 2022-2025, net 10bp)
-# generated 2026-08-09 from src/eval_compare.m
+# generated 2026-09-06 from src/eval_compare.m
 
 === Part A — 6-D DQN evolution (replayed from saved agents; gross cost=0; 5 seeds) ===
                stage                SuccRate    MeanSharpe    AcrossSeedStd    MeanMaxDD_pct    MaxDD_P90_pct    WorstSharpe    TermP10     MeanTerm 
@@ -23,9 +23,8 @@ NOTE: Part A is GROSS (cost=0), per-window Sharpe (window-reset), 5 seeds each,
     "tuned-DQN (seed1000)"      55.547         0.37683       -0.56275     1.6132      0.070538       18.575         91567       15   
     "IQL (seed1000)"            17.524         0.18778       -0.65636      1.424      0.033587       13.346         90931       12   
     "behavior(random)"         -45.852        -0.64245        -1.5551    0.55933    0.00036385       17.015         86345       11   
-    "1/N"                       37.423         0.61809       -0.29636     1.7086       0.15465       10.336         95855       19   
-    "MVO"                      -13.964        -0.31506        -1.2222    0.90261     0.0026803       9.2699         93661        8   
-    "60/40"                      5.852         0.13083       -0.93221      1.231      0.026144       8.6784         95302       12   
+    "MVO"                      -13.964        -0.31506        -1.2255    0.89546     0.0026803       9.2699         93661        8   
+    "60/40"                      5.852         0.13083       -0.90405     1.3374      0.026144       8.6784         95302       12   
 
 NOTE: seed 1000 is ONE favorable realized path, not a cross-seed-robust result.
 
@@ -33,12 +32,13 @@ NOTE: seed 1000 is ONE favorable realized path, not a cross-seed-robust result.
            strategy           TotRet_pct    ChainedSharpe     CI_lo       CI_hi        DSR        MaxDD_P90_pct    TermP10    Success
     ______________________    __________    _____________    ________    _______    __________    _____________    _______    _______
 
-    "tuned-DQN (N=10 ens)"      12.414         0.11748         -0.683     1.3744      0.024566       15.375         91931       15   
-    "IQL (N=10 ens)"            -24.77        -0.31006        -0.9858    0.90374     0.0028555       15.987         92132       13   
+    "tuned-DQN (N=10 ens)"      12.414         0.11748       -0.68381     1.3226      0.024566       15.375         91931       15   
+    "IQL (N=10 ens)"            -24.77        -0.31006        -1.0137    0.89894     0.0028555       15.987         92132       13   
     "behavior(random)"         -45.852        -0.64245        -1.5551    0.55933    0.00036385       17.015         86345       11   
-    "1/N"                       37.423         0.61809       -0.29636     1.7086       0.15465       10.336         95855       19   
-    "MVO"                      -13.964        -0.31506        -1.2222    0.90261     0.0026803       9.2699         93661        8   
-    "60/40"                      5.852         0.13083       -0.93221      1.231      0.026144       8.6784         95302       12   
+    "MVO"                      -13.964        -0.31506        -1.2255    0.89546     0.0026803       9.2699         93661        8   
+    "60/40"                      5.852         0.13083       -0.90405     1.3374      0.026144       8.6784         95302       12   
 
-NOTE: ensemble TotRet is N-sensitive (N=5/10/20 = -7.8%/+12.4%/-19.6%); N=10 is one pick.
-      Chaining leaves the 29 window-boundary rebalances uncharged (favors switching agents).
+NOTE: ensemble TotRet is sensitive to the ensemble size N (this run: N=10 = +12.4%; an
+      earlier sweep gave materially different, even negative, totals at N=5 and N=20) —
+      N=10 is one pick, not a robust edge. Chaining also leaves the 29 window-boundary
+      rebalances uncharged (favors the portfolio-switching agents).

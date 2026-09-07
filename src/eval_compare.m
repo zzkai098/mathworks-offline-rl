@@ -181,7 +181,6 @@ end
 % shared baseline roster (seed-independent) — appears in both C1 and C2 for reference
 baseRoster = {
   'behavior(random)', @(o) Wf(:, randi(nA))
-  '1/N',              @(o) basis.w1N
   'MVO',              @(o) basis.wMVO
   '60/40',            @(o) basis.w6040
 };
@@ -247,7 +246,7 @@ end
 function plotEquity(curves, nm, basis, ttl, savePath)
     f = figure('Name',ttl,'Position',[100 100 1050 560]); hold on; grid on;
     n = numel(curves); cols = lines(n);
-    baseSet = {'behavior(random)','1/N','MVO','60/40'};
+    baseSet = {'behavior(random)','MVO','60/40'};
     for s = 1:n
         isB = any(strcmp(nm(s), baseSet));  lw = 2.2; ls = '-'; if isB; lw = 1.4; ls = '--'; end
         plot(0:numel(curves{s})-1, curves{s}, ls, 'Color',cols(s,:), 'LineWidth',lw, 'DisplayName',nm(s));

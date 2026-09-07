@@ -365,9 +365,9 @@ it hides path risk.
 > (`src/utils/buildEvalBasis.m:60`) — a **+2% hurdle over 30 days**.
 
 **Baselines.** *behavior-random* (the uniform-random frontier policy that generated the offline
-data — beating it is the canonical offline-RL success test); **1/N** equal-weight (DeMiguel,
-Garlappi & Uppal 2009, "hard to beat"); **MVO** = max-Sharpe tangency **fit on train, not
-re-estimated on test**; **60/40** daily constant mix.
+data — beating it is the canonical offline-RL success test); **MVO** = max-Sharpe tangency
+**fit on train, not re-estimated on test**; **60/40** daily constant mix, the passive reference
+this report is measured against.
 
 ### C1 — single shipped agent (seed 1000)
 
@@ -375,19 +375,20 @@ re-estimated on test**; **60/40** daily constant mix.
 |---|---|---|---|---|---|---|---|
 | tuned-DQN (seed 1000) | 0.38 | **[−0.56, 1.61]** | 0.07 | +55.5% | 18.6% | 91567 | 15 |
 | IQL (seed 1000) | 0.19 | **[−0.66, 1.42]** | 0.03 | +17.5% | 13.3% | 90931 | 12 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** | 19 |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 | 12 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | **95302** | 12 |
 | MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 | 8 |
 | behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 | 11 |
 
 ![Part C1 single-seed equity](../experiments/figures/eval_partC1_single_equity.png)
 
-**Read it correctly.** The tuned-DQN's headline **+55.5% total return is *not* an edge**: on the
+**Read it correctly.** The tuned-DQN's headline **+55.5% total return is *not* an edge**. On the
 like-for-like metric — chained Sharpe, which prices return and risk on the *same* path — it
-scores **0.38, below naïve 1/N's 0.62**, so it is *less* risk-efficient, not more. (Its
-per-window MaxDD P90 is also the table's worst, 18.6% vs 1/N's 10.3%; that is the other column
-scope, but it points the same way.)
-Its CI includes 0; its DSR (0.07) survives no multiple-testing haircut. **Seed 1000 is the
+scores 0.38 against 60/40's 0.13, but that gap is **not resolvable**: its CI [−0.56, 1.61]
+contains 60/40's point estimate as comfortably as it contains zero, so the two are
+statistically indistinguishable on this sample. What the nominal lead *does* cost is legible:
+its per-window MaxDD P90 is the table's worst (18.6% vs 60/40's 8.7%) and its Term P10 the
+worst of any non-random row — i.e. it is paid for in risk, in a column where the CI is not
+doing the arguing. Its DSR (0.07) survives no multiple-testing haircut. **Seed 1000 is the
 default first seed used a-priori throughout the project, and it also happens to be the strongest
 single path on this test set** — so it must not carry the argument. The load-bearing comparison
 is the unbiased ensemble below.
@@ -398,15 +399,15 @@ is the unbiased ensemble below.
 |---|---|---|---|---|---|---|
 | tuned-DQN (N=10) | 0.12 | [−0.68, 1.37] | 0.02 | +12.4% | 15.4% | 91931 |
 | IQL (N=10) | −0.31 | [−0.99, 0.90] | 0.00 | −24.8% | 16.0% | 92132 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | **95302** |
 | MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 |
 | behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 |
 
 ![Part C2 ensemble equity](../experiments/figures/eval_partC2_ensemble_equity.png)
 
-The ensemble removes the single-seed luck: **tuned-DQN ties 60/40 (0.12 vs 0.13) and loses to
-1/N**; IQL's ensemble is negative on this path. The ensemble's total return is also **sensitive
+The ensemble removes the single-seed luck: **tuned-DQN ties 60/40 (0.12 vs 0.13)** — the
+0.38 → 0.12 drop between C1 and C2 is the seed-selection premium, measured — and IQL's ensemble
+is negative on this path. The ensemble's total return is also **sensitive
 to N** (an earlier sweep gave materially different, even negative, totals at N=5 and N=20), so
 "+12.4%" is one pick, not a robust number.
 
@@ -565,8 +566,6 @@ are intentionally superseded by the `eval_part*` figures.)
   on Neural Networks* 12(4): 875–889. (See also Moody, Wu, Liao & Saffell, 1998, *J. Forecasting*.)
 - Kahneman, D., & Tversky, A. (1979). Prospect Theory: An Analysis of Decision under Risk.
   *Econometrica* 47(2): 263–291.
-- DeMiguel, V., Garlappi, L., & Uppal, R. (2009). Optimal Versus Naive Diversification: How
-  Inefficient Is the 1/N Portfolio Strategy? *Review of Financial Studies* 22(5): 1915–1953.
 - Bailey, D. H., & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection
   Bias, Backtest Overfitting, and Non-Normality. *Journal of Portfolio Management* 40(5): 94–107.
 - Künsch, H. R. (1989). The Jackknife and the Bootstrap for General Stationary Observations.

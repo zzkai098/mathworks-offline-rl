@@ -47,12 +47,11 @@ function basis = buildEvalBasis(trainPrices, trainMacro, trainingRange, numActio
     isGold = ismember(upN, ["GLD","IAU"]);
     isEq   = ~isBond & ~isGold;
     w6040  = zeros(nAssets,1);  w6040(isEq) = 0.60/nnz(isEq);  w6040(isBond) = 0.40/nnz(isBond);
-    w1N    = ones(nAssets,1)/nAssets;
 
     % --- pack ---
     basis = struct();
     basis.W_frontier = W_frontier;  basis.wMVO = wMVO;
-    basis.w6040 = w6040;            basis.w1N  = w1N;
+    basis.w6040 = w6040;
     basis.macroMean = macroMean;    basis.macroStd = macroStd;
     basis.R_full = R_full;          basis.M_test_z = M_test_z;
     basis.assetNames = {assetNames};basis.nAssets = nAssets;

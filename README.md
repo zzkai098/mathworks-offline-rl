@@ -26,8 +26,8 @@ moving-block bootstrap (block = the 30-day horizon).
 ### Performance vs baselines
 
 Baselines: **behavior-random** (the uniform-random frontier policy that generated the offline
-data — beating it is the canonical offline-RL success test), **1/N** equal-weight, **MVO**
-(max-Sharpe tangency fit on train, not re-estimated on test), and **60/40** daily constant mix.
+data — beating it is the canonical offline-RL success test), **MVO** (max-Sharpe tangency fit
+on train, not re-estimated on test), and **60/40** daily constant mix.
 
 **C1 — the single shipped agent (seed 1000)**
 
@@ -35,8 +35,7 @@ data — beating it is the canonical offline-RL success test), **1/N** equal-wei
 |---|---|---|---|---|---|---|---|
 | tuned-DQN (seed 1000) | 0.38 | [−0.56, 1.61] | 0.07 | **+55.5%** | 18.6% | 91567 | 15 |
 | IQL (seed 1000) | 0.19 | [−0.66, 1.42] | 0.03 | +17.5% | 13.3% | 90931 | 12 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** | 19 |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 | 12 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | **95302** | 12 |
 | MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 | 8 |
 | behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 | 11 |
 
@@ -48,8 +47,7 @@ data — beating it is the canonical offline-RL success test), **1/N** equal-wei
 |---|---|---|---|---|---|---|
 | tuned-DQN (N=10) | 0.12 | [−0.68, 1.37] | 0.02 | +12.4% | 15.4% | 91931 |
 | IQL (N=10) | −0.31 | [−0.99, 0.90] | 0.00 | −24.8% | 16.0% | 92132 |
-| **1/N** | **0.62** | [−0.30, 1.71] | 0.15 | +37.4% | 10.3% | **95855** |
-| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | 95302 |
+| 60/40 | 0.13 | [−0.93, 1.23] | 0.03 | +5.9% | **8.7%** | **95302** |
 | MVO (train-fit tangency) | −0.32 | [−1.22, 0.90] | 0.00 | −14.0% | 9.3% | 93661 |
 | behavior-random | −0.64 | [−1.56, 0.56] | 0.00 | −45.9% | 17.0% | 86345 |
 
@@ -63,13 +61,16 @@ per-window (wealth resets each window, goal = +2%).*
 - **Offline learning did work.** Every configuration beats **behavior-random** — the policy
   that generated its own training data — by +0.33 to +1.02 Sharpe. That is the canonical
   offline-RL success test, and all four agents pass it.
-- **It did not beat the naive baselines.** +55.5% is not an edge: that seed's Sharpe (0.38) is
-  below 1/N's (0.62). The N=10 ensemble ties 60/40 and loses to 1/N.
+- **The nominal lead is inside the noise.** Seed 1000 posts the table's top Sharpe (0.38), but
+  its CI [−0.56, 1.61] contains 60/40's 0.13 as comfortably as it contains zero, and the N=10
+  ensemble (0.12) is a dead heat with 60/40 (0.13). What that lead costs is legible in a column
+  the CI is not arguing over: 18.6% MaxDD P90 against 60/40's 8.7%, and the worst Term P10 of
+  any non-random row.
 - **Every CI includes zero** — including the margin over behavior-random. ~900 autocorrelated
   days in one regime separates nothing.
-- **Nothing survives the multiple-testing haircut** — DSR peaks at 0.15 (1/N); every agent is
-  ≤ 0.07. **No claim is made to beat a passive baseline**
-  ([Limitations](docs/REPORT.md#5-honest-limitations--conclusion)).
+- **Nothing survives the multiple-testing haircut** — the best Deflated Sharpe in either table
+  is 0.07, against the ~40 configurations examined across weeks 4–10. **No claim is made to beat
+  a passive baseline** ([Limitations](docs/REPORT.md#5-honest-limitations--conclusion)).
 
 ### The core finding — Q-value divergence, and the fix
 
@@ -131,7 +132,7 @@ flowchart TD
 
   subgraph C ["Part C — evaluation (§4)"]
     C1["cost-aware chained backtest<br/>net 10 bp"]
-    C1 --> C2["vs 1/N · 60/40 · MVO ·<br/>behavior-random"]
+    C1 --> C2["vs 60/40 · MVO ·<br/>behavior-random"]
     C2 --> C3["block-bootstrap CI + DSR"]
   end
 

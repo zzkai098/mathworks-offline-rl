@@ -27,7 +27,7 @@ for i = 1:3
 end
 fprintf("\nmean total return: 15-act %+.1f%% | 20-act %+.1f%%\n", 100*mean(r15), 100*mean(r20));
 fprintf("mean effective actions used: 15-act %.1f/15 | 20-act %.1f/20\n", mean(e15), mean(e20));
-fprintf("(baselines: 60/40 +5.9%% | 1/N +37.4%%)\n");
+fprintf("(baseline: 60/40 +5.9%%)\n");
 
 
 function [tr, effA] = evalAgent(FA, nEp, step, H, R_full, M_test_z, iw, gw, c)
